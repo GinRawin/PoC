@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "GET",
+    "prefix": "/IPV6_auto.htm",
+    "version": "1.1"
+  },
+  "header": {
+    "Host": "123",
+    "Content-Length": "0"
+  },
+  "possible_type": "normal"
+}
