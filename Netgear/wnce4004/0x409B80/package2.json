@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "prefix": "/apply.cgi",
+    "version": "1.1"
+  },
+  "header": {
+    "Host": "123",
+    "Content-Length": "1000"
+  },
+  "body":"change_wan_type=1&submit_flag=apply_qos",
+  "possible_type": "normal"
+}
