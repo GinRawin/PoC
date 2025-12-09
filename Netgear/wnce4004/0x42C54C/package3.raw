@@ -1,0 +1,13 @@
+POST /apply.cgi HTTP/1.1
+Host: example.com
+Content-Type: text/xml; charset=utf-8
+Content-Length: 775
+SOAPAction: "http://example.com/weather:service:WANIPConnection:#GetInfo"
+
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <SetIPInterfaceInfo xmlns="http://example.com/weather:service:WANIPConnection:#GetInfo">
+        </SetIPInterfaceInfo>
+    </soap:Body>
+</soap:Envelope>
