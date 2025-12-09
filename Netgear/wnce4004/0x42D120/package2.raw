@@ -1,0 +1,14 @@
+POST /apply.cgi HTTP/1.1
+Host: example.com
+Content-Type: text/xml; charset=utf-8
+Content-Length: 500
+SOAPAction: "http://example.com/weather:service:DeviceConfig:#ConfigurationStarted"
+
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <getWeather xmlns="http://example.com/weather">
+            <cityName>Shanghai</cityName>
+        </getWeather>
+    </soap:Body>
+</soap:Envelope>
