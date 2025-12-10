@@ -1,0 +1,8 @@
+GET /apply.cgi?c HTTP/1.1
+Host: /cgi-bin/
+tamp
+Accept: 69
+Co
+Content-Length: 595
+
+plc_qos_port_select=10&hide2_policy=wzqwzqwzq&submit_flag=plc_qos_dev_port_config
