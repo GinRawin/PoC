@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "prefix": "/openvpn.cgi",
+    "version": "1.1"
+  },
+  "header": {
+    "Host": "123",
+    "Content-Length": "1000"
+  },
+  "body": "openvpnActive=dnsEnable&openvpn_service_port=50000",
+  "possible_type": "normal"
+}
