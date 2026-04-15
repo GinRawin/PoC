@@ -1,0 +1,4 @@
+GET /WLG_adv.htm?test=3&125=ﾌﾇ&200=ﾌﾇ HTTP/1.1
+Cookie: uid=xhyxhy
+Content-Length: 0
+

