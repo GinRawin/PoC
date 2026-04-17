@@ -1,0 +1,5 @@
+POST /cgi-bin/upgrade HTTP/1.1
+Content-Type: application/json
+Content-Length: 259
+
+{"sys.username":"bh^pje","sys.baseusername":"%yuq","sys.baseuserpass":"wzowuqyxq","sys.userpass":">$$wzl)","errCode":"e_aRZQa`aaagdacab^ebaab\\cba_\\ac`^`ad_b`\\]]h_\\bWa_da`]aacbd\\aWb]badaaa_edaa\\b_d\\\\cadaeaba]`\\WZQyaa[a]_baeb__a`]]d``^aRVPsaa\\_\\a`a"}

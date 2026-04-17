@@ -1,0 +1,9 @@
+POST /apply.cgi?/pls_wait_reboot.html timestamp= HTTP/1.1
+Accept: ipv6_lan_ip_fixed
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
+Connection: 108
+Host: 43
+Content-Type: application/json
+Content-Length: 65
+
+wlg1_ssid=wzqwzqwzq&submit_flag=delete_acc&%20timestamp=wzqwzqwzq

