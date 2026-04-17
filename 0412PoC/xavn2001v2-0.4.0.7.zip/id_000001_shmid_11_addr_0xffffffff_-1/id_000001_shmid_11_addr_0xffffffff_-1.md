@@ -1,59 +1,35 @@
-## 摘要
+漏洞名称：
+Netgear XAVN2001v2 0x43a5e0 栈缓冲区溢出漏洞
 
-- 判定: 确认漏洞
-- Sink位置: /usr/sbin/uhttpd 0x43a5e0 0x43a858
-- Source位置: /usr/sbin/uhttpd 0x43a5e0 0x43a800
-- 漏洞二进制: /usr/sbin/uhttpd
-- 漏洞类型: 内存破坏
-- 一句话根因: `config_lan_group` 将未限长的 `body.group_num` 直接带入 `sprintf("lan%s_ipaddr", group_num)`，把 `sp+0x50` 的栈缓冲区溢出到后续局部变量槽位，进而把后续 `nvram_set` 使用的指针破坏成攻击者数据。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST`, `request.prefix=/`, `request.handler_name=apply.cgi?wlacl_add` -> 原始请求 URL 为 `/apply.cgi?wlacl_add`
-  - `body.submit_flag=lan_group` -> `cgi_setobject(0x40b95c)` 选择 `config_lan_group(0x43a5e0)` 处理路径
-  - `body.group_num` -> `s4` (`cgi_value("group_num")` 返回值) -> `sprintf` arg#3 at `0x43a844` -> 栈缓冲区 `sp+0x50`
-  - `body.lan_ipaddr` -> 保存到 `sp+0x70`，原本作为后续 `nvram_set` 的 value 指针；被前述 `sprintf` 溢出覆盖为 `0x3232325f`
-- 执行顺序:
-  1. `/apply.cgi?wlacl_add` 进入 `uhttpd` 的 `apply.cgi` 分发逻辑。
-  2. `cgi_setobject(0x40b95c)` 读取 `body.submit_flag=lan_group`，转入 `config_lan_group(0x43a5e0)`。
-  3. `config_lan_group` 在 `0x43a800` 读取 `body.group_num`，并在 `0x43a820` 先把它写到 NVRAM 键 `lan_group_num`。
-  4. 同函数在 `0x43a858` 调用 `sprintf(sp+0x50, "lan%s_ipaddr", group_num)`，因 `group_num` 过长覆盖到 `sp+0x70`。
-  5. 覆盖后的 `sp+0x70` 被 `0x43a86c` 的 `nvram_set` 当作 value 指针使用，trace 在 `0x43a860` 后直接收到 `SIGSEGV si_addr=0x3232325f`。
+Netgear XAVN2001v2是Netgear公司旗下的一款网络设备固件，受影响固件名称为XAVN2001v2，受影响版本为0.4.0.7。
 
-## 请求与入口
+xavn2001v2-0.4.0.7
+Netgear XAVN2001v2的/usr/sbin/uhttpd二进制文件中存在一个栈缓冲区溢出漏洞。远程攻击者可以通过向/apply.cgi?wlacl_add发送构造的POST请求，传入超长的group_num参数，在LAN分组配置流程中覆盖栈上局部变量并导致程序崩溃，从而造成拒绝服务。
 
-- `VulPacket.json.request` 显示原始请求为 `POST /apply.cgi?wlacl_add`。
-- 真正决定配置分支的是 `body.submit_flag=lan_group`，不是 query 中的 `wlacl_add`。
-- `trace_summary.json` 将入口二进制匹配为 `/usr/sbin/uhttpd`，`main=0x4047d4`，命中 trace 为 `trace/usr_sbin_uhttpd.txt`。
-- 入口 trace 在第 16 行命中 `pc=0x4047d4`；后续在第 690 行进入 `cgi_setobject(0x40b95c)`，第 711 行进入 `config_lan_group(0x43a5e0)`。
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在submit_flag=lan_group对应的处理分支内，程序会在0x43a800处读取group_num参数，并在0x43a858处执行sprintf(sp+0x50, "lan%s_ipaddr", group_num)。由于这里没有进行长度校验，超长group_num会覆盖后续局部变量槽位，并在随后的nvram_set调用中触发SIGSEGV。
 
-## 关键地址与数据流
+攻击者可以远程发起攻击，通过向/apply.cgi?wlacl_add发送POST请求，并提交超长的group_num参数来触发漏洞。
 
-- `0x43a630` 打印字符串 `config_lan_group`，与控制台日志中的同名输出一致，确认崩溃函数。
-- `0x43a7f8` / `0x43a800` 调用 `cgi_value("group_num", ...)`，把 `body.group_num` 读入 `s4`。
-- `0x43a818` / `0x43a824` 调用 `nvram_set("lan_group_num", group_num)`。
-- `0x43a83c` 载入格式串 `lan%s_ipaddr`，`0x43a858` 调用 `sprintf(sp+0x50, "lan%s_ipaddr", s4)`。
-- 栈布局显示目标缓冲区从 `sp+0x50` 开始，而下一槽位在 `sp+0x70`。二者仅相隔 `0x20` 字节。
-- 当前样本中 `body.group_num` 为 32 个 `2`。格式化结果 `lan222...222_ipaddr` 长度超过 32 字节，前 4 个越界字节恰好是 `0x32 0x32 0x32 0x5f`，即大端值 `0x3232325f`。
-- `0x43a86c` 调用 `nvram_set` 前，从 `sp+0x70` 取 value 指针作为 `a1`。该槽位已被前述越界写破坏，因此在后续解引用时崩溃。
+漏洞研究环境：
 
-## Trace / console 证据
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
+原始固件链接为：https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/IMG_xavn2001v2-0.4.0.7.zip
 
-- `trace/usr_sbin_uhttpd.txt:690-710`：
-  - `0x40b95c -> 0x40ba10`，对应 `cgi_setobject`
-  - 说明请求已经根据 `submit_flag` 进入具体配置对象
-- `trace/usr_sbin_uhttpd.txt:711-744`：
-  - `0x43a5e0` 进入 `config_lan_group`
-  - `0x43a820` / `0x43a83c` / `0x43a858` / `0x43a860` 依次出现
-  - 第 744 行：`SIGSEGV {si_addr=0x3232325f}`
-- `container.console.log`：
-  - 出现 `config_lan_group`
-  - 随后出现 `[GreenHouseQEMU] SIGSEGV CAUGHT!`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/xavn2001v2-0.4.0.7.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 结论
+目标配置情况：
 
-- 这是可闭环的真实栈溢出，不是环境噪声。
-- source、sink、变量流和 trace/console 现象一致：
-  - `body.group_num`
-  - `cgi_value("group_num")`
-  - `sprintf("lan%s_ipaddr", group_num)` 覆盖 `sp+0x70`
-  - `nvram_set` 使用被覆盖的指针并崩溃
-- `body` 中其他长字段存在，但当前 crash 地址 `0x3232325f` 与 `group_num` 进入 `lan%s_ipaddr` 的越界字节完全吻合，因此 `group_num` 是本次真实触发字段。
+没有进行特殊配置，默认仿真环境启动。
+
+具体验证过程：
+
+第一步。攻击者向/apply.cgi?wlacl_add发送POST请求，提交submit_flag=lan_group，使程序进入LAN分组配置处理分支sub_43a5e0,然后由于数据包中拥有15个对应字段，因此能够顺利进入读取group_num参数的分支。
+![alt text](image-1.png)
+![alt text](image-2.png)
+![alt text](image-3.png)
+第二步。该分支在0x43a800处读取group_num参数，并在0x43a858处通过sprintf将其拼接进栈上的键名缓冲区。由于写入过程没有长度限制，超长数据会覆盖后续局部状态，并最终在后续处理过程中导致崩溃。
+![alt text](image.png)
+相关问题代码：
+
+0x43a5e0

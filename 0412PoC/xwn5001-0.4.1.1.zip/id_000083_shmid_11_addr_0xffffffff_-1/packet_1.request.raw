@@ -1,7 +1,7 @@
-POST /apply.cgi?ﾌﾃ HTTP/1.1
+POST /apply.cgi HTTP/1.1
 Cookie: uid=xhyxhy
-Content-Type: text/html
 HOST: 192.168.0.50
-Content-Length: 66
+Content-Type: xml/text
+Content-Length: 21
 
-StringTable_NonEnglish_Ver=4&submit_flag=wlacl_edit&device=1&adr=4
+submit_flag=wlacl_del

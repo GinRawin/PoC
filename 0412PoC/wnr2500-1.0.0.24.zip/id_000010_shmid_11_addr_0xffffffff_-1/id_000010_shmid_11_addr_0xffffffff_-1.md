@@ -1,69 +1,33 @@
-## 摘要
+漏洞名称：
+Netgear WNR2500 0x435b68 栈缓冲区溢出漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/usr/sbin/uhttpd unknown 0x435c74`
-- Source位置: `/usr/sbin/uhttpd unknown 0x435c60`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: `内存破坏`
-- 一句话根因: BPA 配置分支把 `body.bpa_dnsaddr2` 通过 `cgi_value` 取出后直接 `strcpy` 到局部缓冲，随后把已破坏的指针继续传给 `update_parental_control_by_dns`，最终在 `0x32323232` 上崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.handler_name=apply.cgi?ﾌﾇ` -> 进入 `/apply.cgi` CGI 路径；`?ﾌﾇ` 是 request 里的 query 后缀
-  - `body.submit_flag=bpa` -> 选择 BPA 配置分支
-  - `body.bpa_dnsaddr2` -> `cgi_value("bpa_dnsaddr2", ...) @ 0x435c60` 返回值 -> `strcpy(s0, v0) @ 0x435c74` -> 覆盖 BPA handler 局部状态
-  - `body.DNSAssign` -> 参与 BPA/ParentalControl 条件分支，但本例决定性覆盖来自 `bpa_dnsaddr2`
-  - 被破坏的 `s0/s3` 指针 -> `update_parental_control_by_dns(a0=s4,a1=s3,a2=s0) @ 0x435c84` -> `SIGSEGV si_addr=0x32323232`
-- 执行顺序:
-  1. POST `/apply.cgi?ﾌﾇ` 到达 `uhttpd`
-  2. `submit_flag=bpa` 把执行流导向 BPA 配置 handler
-  3. handler 在 `0x435c60` 读取 `bpa_dnsaddr2`
-  4. `0x435c74` 的 `strcpy` 无界复制超长 `2222...` 字符串
-  5. 下一步 `0x435c84` 调用 `update_parental_control_by_dns(0x4355d0)` 时已经带入损坏指针，并在 `0x435c8c` 后触发 `SIGSEGV`
+Netgear WNR2500是Netgear公司旗下的一款路由器固件，受影响固件名称为WNR2500，受影响版本为1.0.0.24。
 
-## 原始请求还原
+wnr2500-1.0.0.24
+Netgear WNR2500的/usr/sbin/uhttpd二进制文件中存在一个栈缓冲区溢出漏洞。远程攻击者可以通过向/apply.cgi?ﾌﾇ发送构造的POST请求，传入超长的bpa_dnsaddr2参数，在BPA配置处理流程中覆盖局部内存并导致程序崩溃，从而造成拒绝服务。
 
-- 原始请求方法: `POST`
-- 原始 URL: `/apply.cgi?ﾌﾇ`
-- `body.bpa_dnsaddr2`、`body.DNSAssign` 等只属于请求体参数，不是原始 URL
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在submit_flag=bpa对应的处理分支内，程序会在0x435c60处读取bpa_dnsaddr2参数，并在0x435c74处使用strcpy将其复制到局部缓冲区。由于这里没有进行长度校验，超长输入会破坏后续使用的局部状态，并在随后的处理过程中触发SIGSEGV。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向/apply.cgi?c发送POST请求，并提交超长的bpa_dnsaddr2参数来触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- Main地址: `0x4040b8`
-- 命中的入口 trace: `trace/usr_sbin_uhttpd.txt`
-- 关键 pc 地址:
-  - `0x435c60`: `cgi_value("bpa_dnsaddr2", ...)`
-  - `0x435c74`: `strcpy`
-  - `0x435c84`: 调用 `update_parental_control_by_dns`
-  - `0x4355d0`: `sym.update_parental_control_by_dns`
-  - `0x435c8c`: 崩溃前最后一个 pc
+漏洞研究环境：
 
-## 关键数据流
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
+原始固件链接为：https://github.com/GinRawin/PoC/blob/main/0412PoC/wnr2500-1.0.0.24.zip/IMG_wnr2500-1.0.0.24.zip
 
-- `rabin2 -zz` 把 `0x00060894` 解析为字符串 `bpa_dnsaddr2`
-- `0x435c54-0x435c60` 处调用 `cgi_value("bpa_dnsaddr2", request, len)`
-- `0x435c6c-0x435c74` 处将返回的长字符串直接 `strcpy` 到局部目的缓冲
-- 该覆盖会污染随后作为实参传给 `update_parental_control_by_dns` 的 BPA DNS 指针
-- trace 中 `si_addr=0x32323232` 与输入中重复字符 `'2'` 完全一致，说明崩溃地址已被用户数据污染
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/wnr2500-1.0.0.24.zip/wnr2500-1.0.0.24.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 关键证据
+目标配置情况：
 
-- `trace/usr_sbin_uhttpd.txt`:
-  - `0x435c7c`
-  - `0x4355d0`
-  - `0x435614`
-  - `0x435628`
-  - `0x43576c`
-  - `0x435c8c`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x32323232} ---`
-- `radare2`:
-  - `0x435c54` 调用 `cgi_value`
-  - `0x435c60` 参数字符串地址对应 `bpa_dnsaddr2`
-  - `0x435c74` 调用 `strcpy`
-  - `0x435c84` 调用 `sym.update_parental_control_by_dns`
-- `strings/rabin2`:
-  - `0x00060894 ascii bpa_dnsaddr2`
-  - `0x00060884 ascii bpa_dnsaddr1`
-  - `0x000608a4 ascii hidden_bpa_idle_time`
-## 命中benchmark:否
+没有进行特殊配置，默认仿真环境启动。
 
-## 0-day:是
+具体验证过程：
+
+第一步。攻击者向/apply.cgi?c发送POST请求，提交submit_flag=bpa，使程序进入BPA配置处理分支sub_435b68。
+
+第二步。在DNSAssign与bpa_dnsaddr1不为空的情况下，该分支在0x435c60处读取bpa_dnsaddr2参数，并在0x435c74处通过strcpy将其复制到局部缓冲区。由于复制过程没有长度限制，超长数据会破坏局部内存，导致程序在后续流程中崩溃。
+![alt text](image.png)
+相关问题代码：
+
+0x435b68

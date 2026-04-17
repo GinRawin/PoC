@@ -2,6 +2,6 @@ POST //index.asp?/cgi-bin HTTP/1.1
 HOST: 192.168.0.50
 Cookie: uid=xhyxhy
 Content-Type: text/html
-Content-Length: 44
+Content-Length: 6
 
-test=22222222222222222222222222222222&wans=1
+test=2

@@ -1,84 +1,35 @@
-# 漏洞分析: tew-652brp-1.10.29.zip / id:000004,shmid:000005,cmdinj,src:000091,time:99991,execs:2327,op:(null),pos:0,ipc:3
+https://www.trendnet.com/langen/support/support-detail.asp?prod=150_TEW-652BRP
 
-## 摘要
+漏洞名称：
+Trendnet TEW-652BRP 0x40ea3c 命令注入漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/sbin/httpd 0x419b60 0x419f94`
-- Source位置: `/sbin/httpd 0x419b60 0x419cdc`
-- 漏洞二进制: `/sbin/httpd`
-- 漏洞类型: `命令注入`
-- 一句话根因: `/system_time.cgi*` 处理路径把 `body.date` 直接格式化进 `date -s %s `，随后通过 `_system` 交给 `/bin/sh -c` 执行，没有做任何安全过滤。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST`, `request.prefix=/`, `request.handler_name=system_time.cgi*` -> 进入 `/system_time.cgi*`
-  - `body.date` -> `set_basic_api` 中 `get_cgi(<field="date">)` 返回值 `s2` -> `sprintf(s2_buf, "date -s %s ", s2)` -> `_system("date -s ...")`
-  - `body.countdown_time` -> 同一 handler 的其他配置字段，不是命令模板来源
-  - `body.html_response_page` / `body.html_response_return_page` 只是请求体参数，不是原始 URL
-- 执行顺序:
-  1. `POST /system_time.cgi*` 进入 `httpd_main`，然后转入 `do_apply_post` / `set_basic_api` 这条配置处理链。
-  2. `set_basic_api` 在 `0x419cdc` 通过 `get_cgi` 取出名为 `date` 的字段值。
-  3. `set_basic_api` 在 `0x419f78` 用格式串 `date -s %s ` 生成命令。
-  4. `set_basic_api` 在 `0x419f94` 调 `_system`。
-  5. trace 显示子进程先 `execve("/bin/sh","-c","date -s 222...wzq...",NULL)`，再 `execve("/bin/date",{"date","-s","222...wzq...",NULL})`，最终 `date` 报 `invalid date`。
+Trendnet TEW-652BRP是Trendnet公司旗下的一款路由器固件，受影响固件名称为TEW-652BRP，受影响版本为1.10.29。
 
-## 原始请求
+tew-652brp-1.10.29
+Trendnet TEW-652BRP的/sbin/httpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/system_time.cgi*发送构造的POST请求，控制date参数内容，使其未经转义直接进入_system("date -s %s ", date)执行流程，最终通过/bin/sh -c执行，从而造成任意命令执行风险。
 
-- 方法: `POST`
-- URL/handler: `/system_time.cgi*`
-- 来源字段: `packet_1.request.method`, `packet_1.request.prefix`, `packet_1.request.handler_name`
-- `body.date`、`body.countdown_time`、`body.reboot_type`、`body.html_response_page` 等都只是请求体参数
+该漏洞位于二进制文件/sbin/httpd中，在0x40ea3c函数处理system_time.cgi*请求的分支内，程序会在0x40ea78处调用get_cgi("date")读取用户提交的date参数，并在0x40eadc处调用_system执行前面拼接得到的命令。由于用户可控的date参数在进入shell前没有经过过滤或转义，攻击者可以构造恶意输入触发命令注入。结合当前样本的trace可知，本次真实命中的漏洞位置是0x40ea3c分支中的0x40eadc
 
-## Trace映射
+攻击者可以远程发起攻击，通过向/system_time.cgi*发送POST请求，并在date参数中插入恶意命令内容来触发漏洞。
 
-- 入口二进制: `/sbin/httpd`
-- `main` 地址: `0x40572c`
-- 命中的入口 trace: `trace/sbin_httpd.txt`
-- 关键 trace:
-  - `trace/sbin_httpd.txt:238` `pc=0x40a4bc` 命中 `do_apply_post`
-  - `trace/sbin_httpd.txt:341-343` `fork()` 后 `execve("/bin/sh",{"sh","-c","date -s 222...wzq... ",NULL})`
-  - `trace/17_tb_log.txt:673` `execve("/bin/date",{"date","-s","222...wzq...",NULL})`
-  - `trace/17_tb_log.txt:761` `17 exit(1)`
-- 子进程链: `httpd(pid 14) -> /bin/sh(pid 17) -> /bin/date(pid 20)`
+漏洞研究环境：
 
-## 数据流细节
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
 
-- `0x419cdc`: `get_cgi(<field-name>)`，该轮遍历命中字段 `date`
-- `0x419f60-0x419f78`: `sprintf(..., "date -s %s ", ...)`
-- `0x419f8c-0x419f94`: `_system("date -s ...")`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了patch后的rehost镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/tew-652brp-1.10.29.zip/tew-652brp-1.10.29.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-控制台与 trace 一致:
+目标配置情况：
 
-```text
-[qemu] doing qemu_execven on filename /bin/sh
-[qemu] doing qemu_execven on filename /bin/date
-date: invalid date `222222...wzq...'
-```
+没有进行特殊配置，默认仿真环境启动。
 
-这说明用户可控的 `date` 字段已经未经约束地进入 shell 命令模板并被执行。当前样本没有使用分号等元字符，因此只表现为 `date` 参数非法；但命令注入本身已经成立。
+具体验证过程：
 
-## 误报检查
+第一步。攻击者向/system_time.cgi*发送POST请求，提交date参数，使程序进入0x40ea3c中的system_time.cgi*处理分支。
 
-- 不是误报:
-  - source 可解释: `get_cgi` 读取 `date`
-  - sink 可解释: `_system`
-  - 数据流可解释: `body.date -> sprintf("date -s %s ") -> /bin/sh -c -> /bin/date`
-  - trace / console / 反汇编三者一致
-- 缺失的不是关键闭环，而只是“利用载荷中的进一步 shell 元字符”。即使当前样本只是无效日期字符串，危险执行路径也已真实发生。
+第二步。该分支在0x40ea78处调用get_cgi("date")读取用户输入，并在后续流程中将其作为参数传入date -s %s 格式串，再由0x40eadc处的_system调用执行。由于输入内容未经过过滤，用户可控数据会进入/bin/sh -c执行路径，从而触发命令注入风险。
 
-## 证据
+![alt text](image.png)
+相关问题代码：
 
-- 关键反汇编:
-  - `0x419cdc` `get_cgi`
-  - `0x419f78` `sprintf`
-  - `0x419f94` `_system`
-  - 字符串: `system_time.cgi*`, `date -s %s `
-- 关键 trace:
-  - `trace/sbin_httpd.txt:343` `/bin/sh -c "date -s 222...wzq... "`
-  - `trace/17_tb_log.txt:673` `/bin/date -s 222...wzq...`
-- 关键控制台:
-  - `[qemu] doing qemu_execven on filename /bin/sh`
-  - `[qemu] doing qemu_execven on filename /bin/date`
-  - `date: invalid date '222...wzq...'`
-
-## 命中benchmark:否
-
-## 0-day:是
+0x40ea3c

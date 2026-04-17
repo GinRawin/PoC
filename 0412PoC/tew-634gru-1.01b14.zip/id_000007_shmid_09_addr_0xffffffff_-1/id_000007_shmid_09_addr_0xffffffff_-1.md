@@ -1,102 +1,35 @@
-# 漏洞分析: tew-634gru-1.01b14.zip / id:000007,shmid:09,addr:0xffffffff,-1
+https://www.trendnet.com/support/support-detail.asp?prod=180_TEW-634GRU
 
-## 摘要
+漏洞名称：
+Trendnet TEW-634GRU 0x40ebd4 命令注入漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/sbin/httpd 0x40a654 0x40ec74`
-- Source位置: `/sbin/httpd 0x40a654 0x40ec18`
-- 漏洞二进制: `/sbin/httpd`
-- 漏洞类型: `命令注入`
-- 一句话根因: `do_apply_post` 从 `body.date` 读取用户输入后，直接把它作为 `%s` 参数传入 `_system("date -s %s ", date)`，最终经 `/bin/sh -c` 执行，没有 shell 级过滤。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix="/" + request.handler_name="system_time.cgi*?version.txt"` -> 选择系统时间设置路径
-  - `body.date="1"` -> `get_cgi("date")` 返回值 `s0` -> `_system("date -s %s ", s0)` 的格式化参数 -> shell 命令 `date -s 1 `
-  - 其余大量 body 字段 (`Secondary`、`IsAccessPoint`、`SSID` 等) -> 当前已确认路径中未见进入该命令模板
-- 执行顺序:
-  1. `POST /system_time.cgi*?version.txt` 命中系统时间处理逻辑。
-  2. `do_apply_post` 在 `0x40ec18` 调用 `get_cgi("date")`，取出 `body.date`。
-  3. `do_apply_post` 在 `0x40ec74` 调用 `_system("date -s %s ", date)`。
-  4. `httpd` fork 后 `execve("/bin/sh", {"sh","-c","date -s 1 "})`，shell 再派生 `execve("/bin/date", {"date","-s","1"})`。
-  5. `date` 因参数非法返回错误，但危险命令执行已发生。
+Trendnet TEW-634GRU 1.01B14是Trendnet公司旗下的一款路由器固件，受影响产品为TEW-634GRU，受影响版本为1.01B14。
 
-## 原始请求
+Trendnet TEW-634GRU 1.01B14的/sbin/httpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/system_time.cgi*?version.txt发送构造的POST请求，控制date参数内容，使其进入date -s %s 命令模板并被/bin/sh -c执行，从而造成任意命令执行。
 
-- 方法: `POST`
-- URL: `/system_time.cgi*?version.txt`
-- handler: `system_time.cgi*?version.txt`
-- URL 来源: `VulPacket.json.request`
-- body 中与漏洞链条相关的关键字段:
-  - `date=1`
-- 其他 body 字段数量很多，但当前证据只支持 `date` 进入命令执行链
+该漏洞位于二进制文件/sbin/httpd中，在do_apply_post函数的系统时间处理分支内，程序在0x40ec18处读取date参数，在0x40ec74处直接调用_system("date -s %s ", date)执行命令。由于用户输入在进入shell前没有经过有效过滤，攻击者可以构造恶意date参数触发命令注入。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向/system_time.cgi*?version.txt发送包含恶意date参数的POST请求触发漏洞。
 
-- 入口二进制: `/sbin/httpd`
-- `main` 地址: `0x40582c`
-- 命中的入口 trace: `trace/sbin_httpd.txt`
-- 子进程链:
-  - `httpd(pid 14)` -> `sh(pid 17)` -> `date(pid 20)`
-- 关键 trace:
-  - `trace/sbin_httpd.txt:341-344`
-    - `pc=0x436b00`
-    - `14 fork() = 17`
-    - `14 fork() = 0`
-    - `17 execve("/bin/sh",{"sh","-c","date -s 1 ",NULL}) = 0`
-  - `trace/17_tb_log.txt:673`
-    - `20 execve("/bin/date",{"date","-s","1",NULL}) = 0`
-  - `trace/17_tb_log.txt:761`
-    - `17 exit(1)`
-  - `trace/20_tb_log.txt:149`
-    - `20 exit(1)`
+漏洞研究环境：
 
-## 关键数据流
+通过模拟仿真进行验证。当前附件中提供了对应的rehost环境，原始固件可通过上述下载链接获取。
 
-`do_apply_post` 中的关键片段位于 `0x40ec0c-0x40ec74`:
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/tew-634gru-1.01b14.zip/tew-634gru-1.01b14.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-- `0x40ec0c-0x40ec18`
-  - 调用 `get_cgi(<date字符串>)`
-  - 返回值保存到 `s0`
-- `0x40ec50-0x40ec74`
-  - `a1 = s0`
-  - `a0 = "date -s %s "`
-  - 调用 `_system()`
+目标配置情况：
 
-因此可以写出闭环:
+没有进行特殊配置，默认仿真环境启动。
 
-- `body.date`
-  -> `get_cgi("date")`
-  -> `s0`
-  -> `_system("date -s %s ", s0)`
-  -> `/bin/sh -c "date -s 1 "`
-  -> `/bin/date -s 1`
+具体验证过程：
 
-## Console与反编译证据
+第一步。攻击者向/system_time.cgi*?version.txt发送POST请求，请求中携带date参数，使程序进入系统时间设置处理分支。
 
-- `container.console.log`
-  - `[qemu] doing qemu_execven on filename /bin/sh`
-  - `[qemu] doing qemu_execven on filename /bin/date`
-  - `date: invalid date '1'`
-- 二进制字符串
-  - `system_time.cgi*`
-  - `version.txt`
-  - `date -s %s `
-- 关键反汇编
-  - `0x40ec10 lw t9, -31564(gp)`，`0x40ec18 jalr t9` -> 读取 `date`
-  - `0x40ec58 lw t9, -32604(gp)` -> `_system`
-  - `0x40ec5c addiu a0, ..., "date -s %s "`
-  - `0x40ec74 jalr t9`
+第二步。程序在0x40ec18处读取date参数内容，并将其作为格式化参数传入date -s %s 命令模板。
 
-## 为什么这是确认漏洞
+第三步。程序在0x40ec74处调用_system执行拼接后的命令，请求参数最终经/bin/sh -c解释执行，造成命令注入。
+![alt text](image.png)
+相关问题代码：
 
-- 已有可解释 source:
-  - `get_cgi("date")` at `0x40ec18`
-- 已有可解释 sink:
-  - `_system("date -s %s ", date)` at `0x40ec74`
-- 已有完整闭环:
-  - `body.date -> s0 -> _system format arg -> /bin/sh -c`
-- trace / console / 反汇编一致:
-  - trace 给出 `/bin/sh -c "date -s 1 "`
-  - trace 继续到 `/bin/date -s 1`
-  - console 给出 `date: invalid date '1'`
-
-后面的参数错误只是当前 payload 的执行结果，不影响命令注入成立；真正的危险点是用户输入未经 shell 过滤就进入了 `sh -c`。
+0x40ebd4

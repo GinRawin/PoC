@@ -1,74 +1,33 @@
-## 摘要
+漏洞名称：
+Netgear WNR2500 0x4364e8 空指针解引用漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/usr/sbin/uhttpd 0x4363e8 0x4364c4`
-- Source位置: `/usr/sbin/uhttpd 0x4363e8 0x4364b0`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: `参数校验缺失`
-- 一句话根因: `submit_flag=pptp` 进入 PPTP 配置处理函数后，程序对 `body.pptp_dnsaddr1` 的 `cgi_value` 返回值缺少 NULL 检查，直接把 `NULL` 传给 `strcpy`，触发空指针崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST` + `request.prefix=/` + `request.handler_name=apply.cgi?currentsetting.htm` -> 原始请求 URL 为 `/apply.cgi?currentsetting.htm`
-  - `body.submit_flag=pptp` -> `cgi_setobject @ 0x40b4bc` 读取后命中 `pptp` 动作表项，跳转到 `0x4363e8`
-  - `body.DNSAssign=1` -> `cgi_value("DNSAssign") @ 0x43647c` 返回值 -> `strcpy` -> 栈缓冲区 `sp+0x30`
-  - `body.pptp_dnsaddr1` 缺失 -> `cgi_value("pptp_dnsaddr1") @ 0x4364b0` 返回 `NULL` -> `strcpy @ 0x4364c4` 的 `src`
-  - `body.show_traffic=BRS_netgear_success.html` 只是请求体参数，当前没有证据表明它参与了本次崩溃
-- 执行顺序:
-  1. `uhttpd` 接收 `POST /apply.cgi?currentsetting.htm`
-  2. `cgi_setobject` 读取 `submit_flag=pptp`，把请求分派到 PPTP 处理函数 `0x4363e8`
-  3. 该函数先读取并复制 `DNSAssign`
-  4. 随后读取 `pptp_dnsaddr1`，但该字段在当前数据包中缺失，`cgi_value` 返回 `NULL`
-  5. 程序仍在 `0x4364c4` 调用 `strcpy(dst=sp+0x50, src=NULL)`，trace 紧接着出现 `SIGSEGV si_addr=NULL`
+Netgear WNR2500是Netgear公司旗下的一款路由器固件，受影响固件名称为WNR2500，受影响版本为1.0.0.24。
 
-## 原始请求还原
+wnr2500-1.0.0.24
+Netgear WNR2500的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?currentsetting.htm发送构造的POST请求，在PPTP配置处理流程中省略pptp_dnsaddr1参数，使程序在后续复制字符串时对空指针进行解引用，从而导致uhttpd进程崩溃，造成拒绝服务。
 
-- 原始请求方法: `POST`
-- 原始 URL: `/apply.cgi?currentsetting.htm`
-- handler 来源: `VulPacket.json.packet_1.request.handler_name=apply.cgi?currentsetting.htm`
-- `body` 中的 `show_traffic=BRS_netgear_success.html`、`DNSAssign=1`、`wan_pptp_server_ip=7` 等都只是请求体参数，不是 URL
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在submit_flag=pptp对应的处理分支内，程序会先读取DNSAssign参数，随后在0x4364b0处读取pptp_dnsaddr1参数。当该字段缺失时，cgi_value返回NULL，但代码仍在0x4364c4处调用strcpy进行复制，最终触发SIGSEGV。
 
-## 入口二进制与 Trace 映射
+攻击者可以远程发起攻击，通过向/apply.cgi?currentsetting.htm发送POST请求，并省略pptp_dnsaddr1参数来触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `binary_summary.json` 给出的 `main` 地址: `0x4040b8`
-- `trace_summary.json` 已匹配到 `trace/usr_sbin_uhttpd.txt`
-- 关键 trace 序列:
-  - `pc=0x40b46c` 进入 `cgi_setobject`
-  - `pc=0x4363e8` 进入 PPTP 配置处理函数
-  - `pc=0x436468 -> 0x436484` 读取 `DNSAssign`
-  - `pc=0x43648c -> 0x43649c` 将 `DNSAssign` 复制到栈缓冲区
-  - `pc=0x4364a0 -> 0x4364b8` 读取 `pptp_dnsaddr1`
-  - 紧接着 `SIGSEGV si_addr=NULL`
+漏洞研究环境：
 
-## 关键数据流
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
+原始固件链接为：https://github.com/GinRawin/PoC/blob/main/0412PoC/wnr2500-1.0.0.24.zip/IMG_wnr2500-1.0.0.24.zip
 
-- `cgi_setobject @ 0x40b46c` 通过 `cgi_value("submit_flag") @ 0x40b4bc` 取得 `pptp`
-- trace 在动作表匹配后落到 `0x4363e8`，说明当前请求确实进入了 PPTP 对应回调
-- 在 `0x43646c/0x43647c` 处调用 `cgi_value("DNSAssign")`，返回值随后在 `0x436494` 的 `strcpy` 中被复制到 `sp+0x30`
-- 在 `0x4364a0/0x4364b0` 处调用 `cgi_value("pptp_dnsaddr1")`
-- 该字段并未出现在 `VulPacket.json.body` 中，因此返回值为 `NULL`
-- 程序没有检查 `v0` 是否为空，而是在 `0x4364bc/0x4364c4` 直接准备执行 `strcpy(dst=sp+0x50, src=v0)`，最终崩溃
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/wnr2500-1.0.0.24.zip/wnr2500-1.0.0.24.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 关键证据
+目标配置情况：
 
-- `VulPacket.json` 中存在 `submit_flag=pptp`、`DNSAssign=1`，但缺失 `pptp_dnsaddr1`
-- 二进制字符串明确包含 `DNSAssign`、`pptp_dnsaddr1`、`pptp_dnsaddr2`
-- `objdump` 反汇编显示:
-  - `0x43647c` 调用 `cgi_value("DNSAssign")`
-  - `0x4364b0` 调用 `cgi_value("pptp_dnsaddr1")`
-  - `0x4364c4` 调用 `strcpy`
-- trace 与反汇编严格对齐，崩溃发生在第二个 DNS 字段读取后、第三个字段读取前
-- `container.console.log` 只有固定的 `artmtd -r sn` 子进程和最终 `SIGSEGV`，没有更强的环境异常解释
+没有进行特殊配置，默认仿真环境启动。
 
-## 结论
+具体验证过程：
 
-- 这是一个可解释的请求体参数校验缺失漏洞
-- 闭环已经成立:
-  - `body.submit_flag=pptp`
-  - `body.pptp_dnsaddr1` 缺失
-  - `cgi_value("pptp_dnsaddr1") @ 0x4364b0`
-  - `strcpy @ 0x4364c4`
-  - `SIGSEGV si_addr=NULL`
+第一步。攻击者向/apply.cgi?currentsetting.htm发送POST请求，提交submit_flag=pptp，使程序进入PPTP配置处理分支sub_4363e8。
 
-## 命中benchmark:否
+第二步。该分支在前面读取DNSAssign后，会继续在0x4364b0处读取pptp_dnsaddr1参数。由于当前请求中缺少该字段，返回值为NULL，但程序仍在0x4364c4处调用strcpy复制该指针内容，最终触发崩溃。
+![alt text](image.png)
+相关问题代码：
 
-## 0-day:是
+0x4364e8

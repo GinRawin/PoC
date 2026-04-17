@@ -1,67 +1,33 @@
-# 漏洞分析: xwn5001-0.4.1.1.zip / id:000097,shmid:000003,cmdinj,src:000714,time:4570511,execs:19717,op:(null),pos:0,ipc:3
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-## 摘要
+漏洞名称：
+Netgear XWN5001 0x40cb78 命令注入漏洞
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `0x40cb78` `0x40cc34`
-- Source位置: `/usr/sbin/uhttpd` `0x40cb78` `0x40cbf8`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 命令注入
-- 一句话根因: `hijack_dhcp` 路径把 `body.pppoe_ipaddr` 直接格式化进 `/sbin/ipconflict %s %s noexec`，随后交给 `system()` 走 `/bin/sh -c`。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix + request.handler_name -> /apply.cgi?hijack_dhcp` 定义原始请求 URL
-  - `body.submit_flag(hijack_pppoe) -> CGI 分支选择 -> hijack/wan 提交路径`
-  - `body.pppoe_ipaddr -> sym.cgi_value @ 0x40cbf8 返回值 -> [sp+0x10] -> snprintf arg#4 @ 0x40cc24 -> 栈缓冲区 [sp+0x20] -> system @ 0x40cc34`
-  - `body.pppoe_ipaddr -> trace 741 / 19_tb_log 588 中的 `/sbin/ipconflict <user> 255.255.255.255 noexec``
-- 执行顺序:
-  1. `POST /apply.cgi?hijack_dhcp` 进入 `/usr/sbin/uhttpd` 的 CGI 提交路径。
-  2. `submit_flag=hijack_pppoe` 使请求走到 `hijack` WAN 处理逻辑。
-  3. `sym.detect_ipconflict` 在 `0x40cbf8` 通过 `cgi_value` 读取 `pppoe_ipaddr`。
-  4. `sym.detect_ipconflict` 在 `0x40cc24`/`0x40cc34` 先 `snprintf` 再 `system` 触发 shell。
-  5. 子进程 `19`/`22` 执行 `/sbin/ipconflict <user> 255.255.255.255 noexec`，因为目标程序缺失而 `exit(127)`；随后父路径继续固定执行 `/etc/init.d/net-wan restart`。
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-## 原始请求
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/apply.cgi?hijack_dhcp发送构造的POST请求，在submit_flag=hijack_pppoe的处理路径中控制pppoe_ipaddr参数内容，使其进入shell命令模板并被/bin/sh -c执行，从而造成任意命令执行。
 
-- 方法: `POST`
-- URL: `/apply.cgi?hijack_dhcp`
-- handler来源: `VulPacket.json -> packet_1.request.handler_name`
-- body字段只作为参数值参与后续数据流，不定义原始 URL。
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在hijack相关处理逻辑内，程序在0x40cbf8处读取pppoe_ipaddr参数，并在0x40cc24处将其格式化进/sbin/ipconflict %s %s noexec命令模板，随后在0x40cc34处调用system执行该命令。由于整个过程没有对用户输入进行shell级过滤，因此攻击者可以构造恶意参数触发命令注入。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向/apply.cgi?hijack_dhcp发送包含submit_flag=hijack_pppoe和恶意pppoe_ipaddr参数的POST请求触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- Main地址: `0x4047d4`
-- 命中的入口trace: `usr_sbin_uhttpd.txt`
-- 子进程trace链: `10_tb_log.txt -> 19_tb_log.txt -> 26_tb_log.txt`
-- 关键pc地址: `0x40cb78`, `0x40cbf8`, `0x40cc24`, `0x40cc34`
+漏洞研究环境：
 
-## 数据流细节
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- `sym.detect_ipconflict` 的反编译显示：`cgi_value(...)` 先取请求字段，再用 `"/sbin/ipconflict %s %s noexec"` 组命令，然后 `system()` 执行。
-- trace 直接证明 `body.pppoe_ipaddr` 的长字符串出现在 `execve("/bin/sh",{"sh","-c","/sbin/ipconflict ..."})` 中，随后又在 `19_tb_log.txt` 里展开为 `execve("/sbin/ipconflict", ...)`。
-- 同一路径下的 `/etc/init.d/net-wan restart` 是固定后续动作，不影响前面的用户可控 shell sink 已经成立。
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 误报检查
+目标配置情况：
 
-- 这不是误报：source、命令模板、shell sink、子进程执行链都能对齐。
-- 当前缺失的证据: 无法精确恢复更上游的 handler 函数名，但不影响 `source -> variable -> sink` 闭环。
-- 替代解释: `/sbin/ipconflict` 缺失只解释了为什么子进程 `exit(127)`，不能解释用户值为何已进入 `system()` 命令模板。
+没有进行特殊配置，默认仿真环境启动。
 
-## 证据
+具体验证过程：
 
-- `19_tb_log.txt:588` `pppoe_ipaddr` 命中: `22 execve("/sbin/ipconflict",{"/sbin/ipconflict","222222222222222222222222222222222222222222222222222222222wzq22222222222222222222222222222222222222222222222222222222222222222222","255.255.255.255","noexec",NULL}) = 0`
-- `usr_sbin_uhttpd.txt:741` `pppoe_ipaddr` 命中: `19 execve("/bin/sh",{"sh","-c","/sbin/ipconflict 222222222222222222222222222222222222222222222222222222222wzq22222222222222222222222222222222222222222222222222222222222222222222 255.255.255.255 noexec",NULL}) = 0`
-- `usr_sbin_uhttpd.txt:839` `--- SIGCHLD {si_signo=SIGCHLD, si_code=1, si_pid=19, si_uid=0, si_status=127, si_utime=4, si_stime=6} ---`
-- `usr_sbin_uhttpd.txt:938` `--- SIGCHLD {si_signo=SIGCHLD, si_code=1, si_pid=24, si_uid=0, si_status=0, si_utime=0, si_stime=0} ---`
+第一步。攻击者向/apply.cgi?hijack_dhcp发送POST请求，并通过submit_flag=hijack_pppoe使程序进入函数sub_4326c8。
+![alt text](image.png)
+第二步。函数sub_4326c8调用函数detect_ipconflict. 程序在0x40cbf8处读取pppoe_ipaddr参数内容，并在0x40cc24处将其拼接进/sbin/ipconflict %s %s noexec命令模板。程序在0x40cc34处调用system执行拼接后的命令，请求参数最终经/bin/sh -c解释执行，造成命令注入。
+![alt text](image-1.png)
+相关问题代码：
 
-- 关键容器日志行:
-- `[qemu] doing qemu_execven on filename /bin/sh`
-- `[qemu] doing qemu_execven on filename /sbin/ipconflict`
-- `sh: /sbin/ipconflict: not found`
-- `[qemu] doing qemu_execven on filename /bin/sh`
-- `[qemu] doing qemu_execven on filename /etc/init.d/net-wan`
-- `sh: /etc/init.d/net-wan: not found`
-
-- 关键反编译证据:
-  - `sym.detect_ipconflict @ 0x40cb78`: `cgi_value` 读取字段后，在 `0x40cc24` 使用 `"/sbin/ipconflict %s %s noexec"` 调 `snprintf`，在 `0x40cc34` 调 `system`。
-  - `sym.cmd_hijack_wan @ 0x431b54`: 固定执行 `"/etc/init.d/net-wan restart"`。
+0x40cb78

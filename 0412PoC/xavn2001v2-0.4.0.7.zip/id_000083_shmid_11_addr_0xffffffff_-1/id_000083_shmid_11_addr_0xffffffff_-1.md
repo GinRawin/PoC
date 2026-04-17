@@ -1,86 +1,33 @@
-## 摘要
+漏洞名称：
+Netgear XAVN2001v2 0x437e0c 空指针解引用漏洞
 
-- 判定: 确认漏洞
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 空指针解引用 / DoS
-- Source位置:
-  - 控制分发: `0x40b9a0` 取 `submit_flag`，`0x471aa0` 表项把 `wlan_adv_plc` 映射到 `0x437e0c`
-  - 数据source: `0x437e74` 以键名 `wl_enable_LED` 调用 `0x40b4a4` 查参，`0x437e90` 把返回值写入 `$s1/$17`
-- Sink位置: `0x437ebc` / `0x437ec0`，把 `$s1/$17` 作为 `strcmp` 第一个实参传入，第二个实参是 `0x45a57c = "off"`
-- 一句话根因: `config_wladv_plc` 路径要求请求参数 `wl_enable_LED`，但代码只查值不判空；当该键缺失时，返回的 `NULL` 被直接传给 `strcmp("off")`，随后崩溃
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST`, `request.prefix=/`, `request.handler_name=apply.cgi?ﾌﾃ` -> 原始请求 URL 是 `/apply.cgi?ﾌﾃ`
-  - `body.submit_flag=wlan_adv_plc` -> `0x40b9a0` 查到该值，分发表 `0x471aa0 = { "wlan_adv_plc", 0, 0x437e0c }` 进入 `config_wladv_plc`
-  - `body.wl_enable_LED` -> 当前数据包中缺失，`0x437e74` 查参返回 `NULL`，`0x437e90` 保存到 `$s1/$17`
-  - `$s1/$17 = NULL` -> `0x437ebc` `move $4, $17`，`0x437ec0` 调 `strcmp($4, "off")`
-- 执行顺序:
-  1. `uhttpd` 收到 `POST /apply.cgi?ﾌﾃ`
-  2. `0x40b9a0` 从参数表中查到 `submit_flag=wlan_adv_plc`
-  3. `0x471aa0` 分发表命中 `wlan_adv_plc -> 0x437e0c`
-  4. `0x437e74` 继续查找 `wl_enable_LED`，因该键缺失而返回 `NULL`
-  5. `0x437ebc` / `0x437ec0` 直接执行 `strcmp(NULL, "off")`
-  6. trace 在 `0x437eb4` 后立刻报 `SIGSEGV si_addr=NULL`
+Netgear XAVN2001v2是Netgear公司旗下的一款网络设备固件，受影响固件名称为XAVN2001v2，受影响版本为0.4.0.7。
 
-## 请求与入口
+xavn2001v2-0.4.0.7
+Netgear XAVN2001v2的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?c发送构造的POST请求，在wlan_adv_plc处理流程中省略wl_enable_LED参数，使程序在后续字符串比较时对空指针进行解引用，从而导致uhttpd进程崩溃，造成拒绝服务。
 
-- 原始请求方法: `POST`
-- 原始请求 URL: `/apply.cgi?ﾌﾃ`
-- `body.show_traffic=apply.cgi` 只是参数值，不是 URL
-- 入口二进制: `/usr/sbin/uhttpd`
-- `main` 地址: `0x4047d4`
-- 入口 trace: `trace/usr_sbin_uhttpd.txt`
-- `trace/8_tb_log.txt` 对应的子进程以 `exit(0)` 结束，没有异常信号；本次崩溃留在 `/usr/sbin/uhttpd` 进程内，没有切换到别的二进制
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在submit_flag=wlan_adv_plc对应的处理分支内，程序会在0x437e74处读取wl_enable_LED参数。当该字段缺失时，cgi_value返回NULL，但代码仍在0x437ebc处将其作为strcmp的第一个参数，与常量"off"比较，最终触发SIGSEGV。
 
-## 关键证据
+攻击者可以远程发起攻击，通过向/apply.cgi?c发送POST请求，并省略wl_enable_LED参数来触发漏洞。
 
-- `VulPacket.json` 中明确包含 `body.submit_flag = "wlan_adv_plc"`，且当前 body 中不存在 `wl_enable_LED`
-- 调度逻辑核验:
-  - `0x40b9a0`: `a0 = "submit_flag"`，调用 `0x40b4a4`
-  - `0x40b9b8`: 若返回非空则继续分发
-  - `0x471aa0`: 表项是 `{ 0x44e224 "wlan_adv_plc", 0x0, 0x437e0c }`
-- `0x40b4a4` 语义核验:
-  - 该函数遍历 8-byte 的键值对表
-  - 对每项执行 `strcmp(target_key, current->key)`
-  - 命中时返回 `current->value`
-  - 未命中时返回 `NULL`
-  - 该函数本身没有默认值逻辑，也没有写 nvram 的副作用
-- handler `0x437e0c` 的 source 核验:
-  - `0x437e74`: `a0 = 0x45e248 = "wl_enable_LED"`
-  - `0x437e7c`: `jalr 0x40b4a4`
-  - `0x437e84`: delay slot 把 `$a2` 置为参数个数/边界
-  - `0x437e90`: `move $17, $2`，把查参结果保存到 `$s1/$17`
-- sink 核验:
-  - `0x437eb8`: `lw $25, -0x7dd4($gp)`，该 GOT 槽位解析为 `0x44b5b0 = strcmp`
-  - `0x437ebc`: `move $4, $17`
-  - `0x437ec4`: delay slot 把 `$5` 置为 `0x45a57c = "off"`
-  - 在此之前没有对 `$17` 做空指针检查
-- trace 与调用点闭环:
-  - `trace/usr_sbin_uhttpd.txt:711` -> `pc=0x437e0c`
-  - `trace/usr_sbin_uhttpd.txt:715` -> `pc=0x40b514`，说明查参 helper 已执行并返回
-  - `trace/usr_sbin_uhttpd.txt:716` -> `pc=0x437e88`
-  - `trace/usr_sbin_uhttpd.txt:717` -> `pc=0x437ea0`
-  - `trace/usr_sbin_uhttpd.txt:718` -> `pc=0x437eb4`
-  - `trace/usr_sbin_uhttpd.txt:719` -> `SIGSEGV {si_addr=NULL}`
-- `container.console.log` 中的 `config_wladv_plc Enter` 与 handler 入口字符串 `0x45e210` 一致；`LED_ON_OFF=Unknown` 仅作辅助，不参与本次核心判定
+漏洞研究环境：
 
-## Source -> Variable -> Sink
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
+原始固件链接为：https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/IMG_xavn2001v2-0.4.0.7.zip
 
-- 控制流:
-  - `body.submit_flag = "wlan_adv_plc"`
-  - `0x40b9a0` 调 `0x40b4a4("submit_flag", params, count)` 取值
-  - `0x471aa0` 分发表命中 `wlan_adv_plc`
-  - 执行流进入 handler `0x437e0c`
-- 数据流:
-  - source: `body.wl_enable_LED`，当前请求中该键缺失
-  - `0x437e74` 调 `0x40b4a4("wl_enable_LED", params, count)` 查值
-  - 返回值在 `0x437e90` 保存为 `$s1/$17 = NULL`
-  - `0x437ebc` 把 `$17` 装入 `strcmp` 的第一个参数寄存器 `$a0`
-  - `0x437ec0` 调用 `strcmp($a0, "off")`
-  - `strcmp` 对 `NULL` 解引用，触发 `SIGSEGV`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/xavn2001v2-0.4.0.7.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 结论
+目标配置情况：
 
-- 这是一个可确认的真实漏洞，不是误报
-- 真实触发条件不是 body 中那些超长字段，而是 `submit_flag=wlan_adv_plc` 把请求路由到 `config_wladv_plc` 后，handler 继续读取缺失的 `wl_enable_LED`
-- 根因是典型的未判空参数使用: 查参函数可能返回 `NULL`，调用点却直接把返回值作为 `strcmp` 的实参
-- 当前目录未提供 `analysis_report_template.md`；本报告已按现有任务要求补齐 `摘要`、请求入口、证据、数据流和结论
+没有进行特殊配置，默认仿真环境启动。
+
+具体验证过程：
+
+第一步。攻击者向/apply.cgi?c发送POST请求，提交submit_flag=wlan_adv_plc，使程序进入对应的无线高级配置处理分支sub_437e0c。
+
+第二步。该分支在0x437e74处读取wl_enable_LED参数。由于当前请求中缺少该字段，返回值为NULL，但程序仍在0x437ebc处调用strcmp对其进行比较，最终触发崩溃。
+![alt text](image.png)
+相关问题代码：
+
+0x437e0c

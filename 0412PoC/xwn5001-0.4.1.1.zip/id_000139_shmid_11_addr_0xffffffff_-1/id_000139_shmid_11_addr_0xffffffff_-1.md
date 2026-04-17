@@ -1,64 +1,31 @@
-# 漏洞分析: xwn5001-0.4.1.1.zip / id:000139,shmid:11,addr:0xffffffff,-1
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-## 摘要
+漏洞名称：
+Netgear XWN5001 0x439d50 命令注入漏洞
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `unknown` `unknown`
-- Source位置: `/usr/sbin/uhttpd` `unknown` `unknown`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 命令注入
-- 一句话根因: `diag` 路径把 `body.pingName` 直接嵌进 `ping -c 3 %s > /tmp/ping_res` 的 shell 模板，并通过 `/bin/sh -c` 执行。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix + request.handler_name -> /apply.cgi?upgrade_check_free.cgi` 定义原始请求 URL
-  - `body.submit_flag(diag) + body.diag_type(1) -> 诊断分支选择`
-  - `body.pingName -> ping 模板 "ping -c 3 %s > /tmp/ping_res" -> /bin/sh argv[2] -> /bin/ping argv[3]`
-- 执行顺序:
-  1. `POST /apply.cgi?upgrade_check_free.cgi` 进入 `diag` 诊断 CGI。
-  2. 程序读取 `submit_flag=diag` 和 `diag_type=1`，进入 ping 诊断路径。
-  3. `pingName` 被拼进 `ping -c 3 %s > /tmp/ping_res`。
-  4. 入口进程 `19` 通过 `execve("/bin/sh",{"sh","-c",...})` 执行 shell 命令，并进一步 `execve("/bin/ping", ...)`。
-  5. `ping` 对超长主机名报 `Unknown host`，随后父进程在 `0x32323232` 模式值附近崩溃。
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-## 原始请求
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/apply.cgi?upgrade_check_free.cgi发送构造的POST请求，在submit_flag=diag且diag_type=1的处理路径中控制pingName参数内容，使其进入shell命令模板并被/bin/sh -c执行，从而造成任意命令执行。
 
-- 方法: `POST`
-- URL: `/apply.cgi?upgrade_check_free.cgi`
-- handler来源: `VulPacket.json -> packet_1.request.handler_name`
-- body字段 `pingName`/`lookupName` 是参数值，不是原始 URL。
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在诊断处理逻辑内，程序会读取pingName参数，并将其拼接进ping -c 3 %s > /tmp/ping_res命令模板后交由shell执行。由于整个过程没有对用户输入进行shell级过滤，因此攻击者可以构造恶意pingName参数触发命令注入。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向/apply.cgi?upgrade_check_free.cgi发送包含submit_flag=diag、diag_type=1以及恶意pingName参数的POST请求触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- Main地址: `0x4047d4`
-- 命中的入口trace: `usr_sbin_uhttpd.txt`
-- 子进程trace链: `10_tb_log.txt -> 19_tb_log.txt -> 22_tb_log.txt`
-- 关键pc地址: `0x439e0c`, `0x439f20`, `0x32323232`
+漏洞研究环境：
 
-## 数据流细节
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- 二进制字符串同时包含 `diag_type`、`pingName`、`lookupName` 和 `ping -c 3 %s > /tmp/ping_res`，说明该路径会以请求体字段驱动 shell 诊断命令。
-- trace 703 直接显示 `/bin/sh -c "ping -c 3 <body.pingName> > /tmp/ping_res"`；`19_tb_log.txt` 又显示该命令继续展开为 `/bin/ping -c 3 <body.pingName>`。
-- 容器日志里的 `ping: <超长主机名>: Unknown host` 与 trace 中的用户值完全一致，说明这是用户可控命令参数，而不是固定脚本噪声。
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 误报检查
+目标配置情况：
 
-- 这不是误报：用户字段、命令模板、shell 执行、控制台输出三者一致。
-- 当前缺失的证据: 还没有精确恢复生成该命令模板的函数地址，因此 Source/Sink 地址保守记为 `unknown`。
-- 替代解释: `Unknown host` 只是命令执行结果；真正的问题是用户值已经进入了 shell 模板。
+没有进行特殊配置，默认仿真环境启动。
 
-## 证据
+具体验证过程：
 
-- `19_tb_log.txt:720` `pingName` 命中: `22 execve("/bin/ping",{"ping","-c","3","22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",NULL}) = 0`
-- `usr_sbin_uhttpd.txt:703` `pingName` 命中: `19 execve("/bin/sh",{"sh","-c","ping -c 3 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222 > /tmp/ping_res",NULL}) = 0`
-- `usr_sbin_uhttpd.txt:707` `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x32323232} ---`
+第一步。攻击者向/apply.cgi?upgrade_check_free.cgi发送POST请求，并通过submit_flag=diag和diag_type=1使程序进入ping诊断处理路径sub_439d50。程序读取pingName参数内容，并将其拼接进ping -c 3 %s > /tmp/ping_res命令模板。程序随后调用shell执行拼接后的命令，请求参数最终经/bin/sh -c解释执行，造成命令注入。
+![alt text](image-1.png)
+相关问题代码：
 
-- 关键容器日志行:
-- `[qemu] Successful Bind 0`
-- `[qemu] doing qemu_execven on filename /bin/sh`
-- `[qemu] doing qemu_execven on filename /bin/ping`
-- `ping: 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222: Unknown host`
-- `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-- `[GreenHouseQEMU] SIG 11`
-
-- 关键反编译证据:
-  - 字符串同时存在 `pingName`、`diag_type`、`lookupName`、`ping -c 3 %s > /tmp/ping_res`、`/tmp/ping_res`。
+0x439d50

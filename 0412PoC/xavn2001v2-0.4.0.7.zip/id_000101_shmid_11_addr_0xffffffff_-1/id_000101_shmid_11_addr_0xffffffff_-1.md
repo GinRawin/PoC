@@ -1,58 +1,33 @@
-## 摘要
+漏洞名称：
+Netgear XAVN2001v2 0x439d50 命令注入漏洞
 
-- 判定: 确认漏洞
-- Sink位置: /usr/sbin/uhttpd 0x439d50 0x439e14
-- Source位置: /usr/sbin/uhttpd 0x439d50 0x439dc8
-- 漏洞二进制: /usr/sbin/uhttpd
-- 漏洞类型: 命令注入
-- 一句话根因: `diag` 处理函数把未过滤的 `body.pingName` 直接拼进 `ping -c 3 %s > /tmp/ping_res`，再通过 `system()` 交给 `/bin/sh -c` 执行。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST`, `request.prefix=/`, `request.handler_name=apply.cgi` -> 原始请求 URL 为 `/apply.cgi`
-  - `body.submit_flag=diag` -> `cgi_setobject(0x40b95c)` 选择诊断处理路径
-  - `body.diag_type=1` -> `atoi()` 结果为 `1`，进入 ping 分支
-  - `body.pingName` -> `s1` (`cgi_value("pingName")`) -> `sprintf` arg#3 at `0x439df8` -> 命令缓冲区 `sp+0x18`
-- 执行顺序:
-  1. `POST /apply.cgi` 进入 `uhttpd` 的 `apply.cgi` 分发逻辑。
-  2. `cgi_setobject` 根据 `body.submit_flag=diag` 转入 `diag` 处理函数 `0x439d50`。
-  3. `0x439d8c` 读取 `diag_type`，值为 `1`；`0x439dc8` 读取 `pingName`。
-  4. `0x439e04` 调用 `sprintf(sp+0x18, "ping -c 3 %s > /tmp/ping_res", pingName)`。
-  5. `0x439e14` 调用 `system(sp+0x18)`，trace 记录到 `/bin/sh -c` 执行完整命令，随后出现与攻击字符串一致的崩溃地址 `0x32323232`。
+Netgear XAVN2001v2是Netgear公司旗下的一款网络设备固件，受影响固件名称为XAVN2001v2，受影响版本为0.4.0.7。
 
-## 请求与入口
+xavn2001v2-0.4.0.7
+Netgear XAVN2001v2的/usr/sbin/uhttpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/apply.cgi?c发送构造的POST请求，控制pingName参数内容，在诊断处理流程中将用户输入直接拼接进shell命令并执行，从而造成任意命令执行风险。
 
-- `VulPacket.json.request` 显示原始请求为 `POST /apply.cgi`。
-- `body.show_traffic=pls_wait.html` 只是请求体参数，不是 URL。
-- `trace_summary.json` 将入口二进制匹配为 `/usr/sbin/uhttpd`，`main=0x4047d4`，命中 trace 为 `trace/usr_sbin_uhttpd.txt`。
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在submit_flag=diag且diag_type=1对应的处理分支内，程序会在0x439dc8处读取pingName参数，并在0x439e04处将其拼接进`ping -c 3 %s > /tmp/ping_res`命令模板，随后在0x439e14处调用system执行。由于用户输入在进入shell前没有经过过滤或转义，攻击者可以构造恶意内容触发命令注入。
 
-## 关键数据流
+攻击者可以远程发起攻击，通过向/apply.cgi?c发送POST请求，并在pingName参数中插入恶意命令内容来触发漏洞。
 
-- `0x439d78` / `0x439d8c`：`cgi_value("diag_type")`
-- `0x439d9c`：`atoi(diag_type)`，值为 `1`
-- `0x439dbc` / `0x439dc8`：`cgi_value("pingName")`
-- `0x439dfc` / `0x439e04`：`sprintf(sp+0x18, "ping -c 3 %s > /tmp/ping_res", pingName)`
-- `0x439e10` / `0x439e14`：`system(sp+0x18)`
-- 该链条已经满足 `source -> variable -> sink` 闭环，不需要依赖崩溃才能确认命令注入。
+漏洞研究环境：
 
-## Trace / console 证据
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
+原始固件链接为：https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/IMG_xavn2001v2-0.4.0.7.zip
 
-- `trace/usr_sbin_uhttpd.txt:711-719`：
-  - 进入 `0x439d50`
-  - 在 `0x439ddc`、`0x439df0`、`0x439e0c` 继续构造并准备执行命令
-- `trace/usr_sbin_uhttpd.txt:720-723`：
-  - `15 fork() = 18`
-  - `18 execve("/bin/sh", {"sh","-c","ping -c 3 2222... > /tmp/ping_res", NULL}) = 0`
-- `container.console.log`：
-  - `[qemu] doing qemu_execven on filename /bin/sh`
-  - `[qemu] doing qemu_execven on filename /bin/ping`
-  - `ping: 2222...: Unknown host`
-- `trace/usr_sbin_uhttpd.txt:727`：
-  - `SIGSEGV {si_addr=0x32323232}`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xavn2001v2-0.4.0.7.zip/xavn2001v2-0.4.0.7.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 结论
+目标配置情况：
 
-- 这是确认的命令注入，不是误报。
-- 决定性证据不是后续 `SIGSEGV`，而是：
-  - `pingName` 被 `cgi_value` 读取
-  - 进入 `sprintf("ping -c 3 %s > /tmp/ping_res", pingName)`
-  - 再被 `system()` 通过 `/bin/sh -c` 执行
-- 当前样本使用纯数字长字符串也已经证明了命令模板可控；若改为 shell 元字符，命令将被同一路径解释执行。
+没有进行特殊配置，默认仿真环境启动。
+
+具体验证过程：
+
+第一步。攻击者向/apply.cgi?c发送POST请求，提交submit_flag=diag和diag_type=1，使程序进入诊断处理分支。
+
+第二步。该分支在0x439dc8处读取pingName参数，并在0x439e04处将其直接拼接进ping命令模板，随后由0x439e14处的system调用通过/bin/sh -c执行。由于输入内容未经过过滤，用户可控数据会进入shell执行路径，从而形成命令注入。
+![alt text](image.png)
+相关问题代码：
+
+0x439d50

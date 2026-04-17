@@ -1,147 +1,68 @@
-# 漏洞分析: us-ap5v1.0br-v1.0.0.9-2224-en-tde01.zip / id:000000,shmid:11,addr:0xffffffff,-1
+https://www.tendacn.com/material/show/103466
 
-## 摘要
+漏洞名称：
+Tenda AP5 websReadEvent 空指针解引用漏洞
 
-- 判定: `确认漏洞`
-- 漏洞二进制: `/bin/httpd`
-- 漏洞类型: `空指针解引用`
-- Source位置:
-  - `/bin/httpd` `websGetInput` `0x42a7c8-0x42a7e4`: 调用开始先把输出指针 `*arg_1` 清零
-  - `/bin/httpd` `parse_reqline(0x42abe4)` `0x42af6c-0x42afb4`: 对 URL token 做 `strstr(...,"cgi-bin")`，命中后置位 `wp->flags |= 0x4000`
-  - `/bin/httpd` `parse_headers(0x42b204)` `0x42b8b4-0x42b938`: 解析 `Content-Length`，把 `atoi(value)` 写入 `wp+0xe0`，并置位 `wp->flags |= 0x400`
-- Sink位置: `/bin/httpd` `websReadEvent` `0x42a214-0x42a220`，调用 `strlen(var_2c)`，其中 `a0 == NULL`
-- 一句话根因: 该 HTTP 状态机在 `POST + cgi-bin + Content-Length>0` 的组合下，会在“请求头结束”的同一次迭代里直接切到 `state=8`，但这条路径没有重新填充新的 body 指针，导致局部变量 `var_2c` 仍为 `NULL`，随后被 `strlen` 解引用崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST` -> `parse_reqline` `0x42acc0-0x42ad0c` -> `wp->flags |= 0x20`
-  - `request.handler_name=/webroot?/cgi-bin` -> URL token 含 `"cgi-bin"` -> `0x42af6c-0x42afb4` -> `wp->flags |= 0x4000`
-  - `header.Content-Length=13` -> `0x42b8b4-0x42b938` -> `wp->field_0xe0 = 13`, `wp->flags |= 0x400`
-  - 头结束空行 -> `websGetInput` 在本轮未执行输出赋值 `0x42aba0`，因此调用者局部 `var_2c` 维持为初始化时的 `NULL`
-- 执行顺序:
-  1. `trace/bin_httpd.txt:744-822` 进入 `/bin/httpd` 的 `websGetInput`，先解析 request line。
-  2. `trace/bin_httpd.txt:830-957` 进入 `parse_reqline(0x42abe4)`，把 `POST` 和 `cgi-bin` 两个条件写进 `wp->flags`。
-  3. `trace/bin_httpd.txt:987-1063` 进入 `parse_headers(0x42b204)`，解析 `Content-Length` 并在头结束后返回。
-  4. `trace/bin_httpd.txt:1064-1069` 回到 `websGetInput`，因为 `POST + cgi-bin + Content-Length>0`，直接把 `wp->state` 改成 `8` 并返回，但没有填充新的 `var_2c`。
-  5. `trace/bin_httpd.txt:1070-1077` 回到 `websReadEvent` 的 `state=8` 分支，块 `0x42a1f8` 中最终执行 `strlen(NULL)` 并收到 `SIGSEGV`。
+Tenda AP5是Tenda公司旗下的一款无线接入点设备，受影响固件名称为us-ap5v1.0br-v1.0.0.9-2224-en-tde01，受影响版本为V1.0.0.9(2224)。
 
-## 原始请求
+us-ap5v1.0br-v1.0.0.9-2224-en-tde01
+Tenda AP5的/bin/httpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过发送构造的POST请求触发HTTP请求解析状态机异常，在请求头解析结束后使程序进入`websReadEvent`的case 8分支，并在后续对空指针执行`strlen`，从而导致httpd进程崩溃，造成拒绝服务。
 
-- 方法来自 `VulPacket.json.packet_1.request.method`: `POST`
-- 请求目标以 `handler_name` 为准，应理解为 `/webroot?/cgi-bin`
-- `body.change=setWrlBasicInfo` 和其他 body 字段只是请求参数，不是原始 URL
-- `header.Content-Length=13` 与 `VulPacket.json` 展示出的 body 键值数量明显不一致；本次崩溃不需要进入业务 handler，仅靠 request line、header 结束和状态机切换就能闭环
+该漏洞位于二进制文件/bin/httpd中，关键调用链可概括为`websReadEvent -> sub_42ABE4 -> websReadEvent -> websGetInput -> sub_42B204 -> websGetInput -> websReadEvent(case 8)`。在处理包含`/cgi-bin`和`Content-Length`的POST请求时，`websGetInput`会在请求头解析结束后直接返回1，但没有为新的请求体缓冲区写入有效指针，导致`websReadEvent`在case 8分支的0x42a214处执行`strlen(v11)`时触发SIGSEGV。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向`//webroot?/cgi-bin`发送构造的POST请求来触发漏洞。
 
-- 入口二进制: `/bin/httpd`
-- Main地址: `0x42fd60`
-- 命中的入口 trace: `trace/bin_httpd.txt`
-- 子进程 trace 链:
-  - `trace/bin_httpd.txt:96-98` 只显示环境初始化噪声: `fork()` 出 pid 14，再 `execve("/bin/sh", {"sh","-c","echo 0 > /proc/sys/net/ipv4/tcp_timestamps",NULL})`
-  - `trace/14_tb_log.txt:729` 该 `/bin/sh` 子进程 `exit(1)`，不是漏洞路径
-- 真正崩溃路径全部留在 `trace/bin_httpd.txt`
-- 关键 trace 位置:
-  - `trace/bin_httpd.txt:739-744` -> `websReadEvent(0x429f30)` 调 `websGetInput(0x42a79c)`
-  - `trace/bin_httpd.txt:830-957` -> `parse_reqline(0x42abe4)`
-  - `trace/bin_httpd.txt:987-1063` -> `parse_headers(0x42b204)`
-  - `trace/bin_httpd.txt:1064-1069` -> `0x42aac4 -> 0x42aae4 -> 0x42ab00 -> 0x42ab3c -> 0x42ab68 -> 0x42abc8`
-  - `trace/bin_httpd.txt:1070-1076` -> `0x42a060 -> 0x42a074 -> 0x42a168 -> 0x42a198 -> 0x42a1b8 -> 0x42a1d4 -> 0x42a1f8`
-  - `trace/bin_httpd.txt:1077` -> `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+漏洞研究环境：
 
-## 关键地址与数据流
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以用binwalk解压对应下载链接的固件得到。
 
-### 1. `websGetInput` 的输出指针在进入函数时被清零
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/us-ap5v1.0br-v1.0.0.9-2224-en-tde01.zip/us-ap5v1.0br-v1.0.0.9-2224-en-tde01.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-- `0x42a7c8` 把局部 `var_2c` 置 0
-- `0x42a7d0-0x42a7d8` 立刻把 `*arg_1 = 0`
-- `0x42a7dc-0x42a7e4` 同样把长度输出 `*arg_2 = 0`
-- 因此，如果后续状态分支没有走到唯一的结果回填点 `0x42aba0-0x42abbc`，调用者看到的 `var_2c` 就仍然是 `NULL`
+目标配置情况：
 
-### 2. request line 把 `POST` 和 `cgi-bin` 写进状态标志
+没有进行特殊配置，默认仿真环境启动。
 
-- `parse_reqline` 从请求行里用 `strtok(..., " \t")` 取出方法 token
-- `0x42acc0-0x42ad0c` 对 `"POST"` 比较成功后，执行 `wp->flags |= 0x20`
-- 同一函数在 `0x42af6c-0x42afb4` 上对 URL token 做 `strstr(url, "cgi-bin")`
-- 本次 trace 经过 `0x42af98`，说明该比较成功，随后执行 `wp->flags |= 0x4000`
-- 这与 `VulPacket.json` 中 `request.handler_name=/webroot?/cgi-bin` 一致
+具体验证过程：
 
-### 3. `Content-Length` 触发 `state=8`
+第一步。攻击者向`//webroot?/cgi-bin`发送POST请求，请求中包含`Content-Length`和请求体数据，使程序进入`websReadEvent`。
 
-- `parse_headers(0x42b204)` 会循环处理每一条 header
-- `0x42b888-0x42b8a8` 命中 `"content-length"`
-- `0x42b8b4-0x42b8d8` 调 `atoi` 解析 header 值，并把结果写入 `wp+0xe0`
-- `0x42b8ec-0x42b910` 在值大于 0 时置位 `wp->flags |= 0x400`
-- 头解析返回后，`websGetInput` 在 `0x42aaac-0x42ab20` 检查到:
-  - `wp->flags & 0x20` 为真，说明是 `POST`
-  - `wp->flags & 0x400` 为真，说明 `Content-Length > 0`
-  - 因此执行 `wp->state = 8`
-- 随后的 `0x42ab3c-0x42ab68` 又因为 `wp->flags & 0x4000` 为真，直接返回 `1`，没有先做下一次读取
+第二步。`websReadEvent`首先调用`sub_42ABE4(a1, v11)`解析HTTP请求行。`sub_42ABE4`在识别URI中的`cgi-bin`后会设置CGI处理相关标志，使后续`websGetInput`满足`v5 = a1[54] & 0x4000`以及`(a1[54] & 0x20) != 0`的条件。随后`websReadEvent`将状态`a1[53]`(即v13)推进到2，等待继续解析请求头。
+![alt text](image.png)
+![alt text](image-1.png)
 
-### 4. 头结束路径跳过了唯一的输出赋值点，所以 `var_2c` 仍为 `NULL`
+第三步。回到`websReadEvent`的while循环后，程序再次调用`websGetInput`读取后续数据。当`socketGets`读到HTTP头部结束的空行时，`websGetInput`进入`a1[53] == 2`分支并调用`sub_42B204(a1)`解析已缓存的请求头。
 
-- `0x42aba0-0x42abbc` 是本函数把 `local_2c/local_28` 回填给调用者的唯一路径
-- 本次 trace 在 header 结束后走的是:
-  - `0x42aac4 -> 0x42aae4 -> 0x42ab00 -> 0x42ab3c -> 0x42ab68 -> 0x42abc8`
-- 该路径明确跳过了 `0x42aba0`
-- 所以回到 `websReadEvent` 时，调用者栈上的 `[fp+0x2c]` 仍是最初的 `NULL`
+在`sub_42B204`中，程序会逐项处理头字段；当匹配到`content-length`时，会执行`a1[56] = atoi(nptr)`，并设置`a1[54] |= 0x400u`。这样一来，`websGetInput`随后命中：
 
-### 5. 真正的 sink 是 `strlen(var_2c)`，不是前一个 `strlen(wp->field_0xa4)`
+```c
+if ( (a1[54] & 0x20) != 0 )
+{
+    if ( (a1[54] & 0x400) != 0 )
+    {
+        a1[53] = 8;
+        v6 = a1[56];
+    }
+    else
+    {
+        a1[53] = 4;
+        v6 = 1;
+    }
+    return v5 || v6 <= 0;
+}
+```
 
-- `state=8` 分支起点是 `0x42a168`
-- trace 依次命中 `0x42a168 -> 0x42a198 -> 0x42a1b8 -> 0x42a1d4 -> 0x42a1f8`
-- `0x42a1d4-0x42a1f0` 的确先对 `wp->field_0xa4` 调了一次 `strlen`
-- 但 `0x42a1f8` 已经是该调用返回后的下一块起点；这说明第一个 `strlen(wp->field_0xa4)` 已经返回
-- 从 `0x42a1f8` 开始的下一段指令会做:
-  - `0x42a20c`: 取 `var_2c`
-  - `0x42a214`: `move a0, var_2c`
-  - `0x42a220`: 调 `strlen(a0)`
-- 因为上一步已经证明 `var_2c == NULL`，这里的真实 sink 是 `strlen(NULL)`
-- `trace/bin_httpd.txt:1077` 的 `si_addr=NULL` 与这个 callsite 完全一致
+由于前面请求行解析已经使`v5 = a1[54] & 0x4000`非零，因此这里即使请求体尚未真正读入，也会直接返回1。需要注意的是，`websGetInput`函数开头先执行了`*a2 = 0; *a3 = 0;`，而这个返回路径没有重新给`*a2`写入有效请求体指针，因此返回到`websReadEvent`时，`v11`仍然为NULL，`v12`仍然为0。
 
-### 6. `request.handler_name` 仍然会进入 `wp->field_0xa4`，但那不是本次崩溃的空指针参数
+![alt text](image-3.png)
+![alt text](image-2.png)
 
-- `websUrlParse(0x41cd44)` 在 `0x41d0ec-0x41d158` 按 `'?'` 分割 URL
-- 指向 `'?'` 后子串的局部 `local_44` 会在函数末尾 `0x41d360-0x41d37c` 通过第 6 个输出参数返回
-- `parse_reqline` 调用 `websUrlParse` 时，第 6 个输出参数正是调用者局部 `local_72`
-- `0x42afb8-0x42afe4` 随后执行 `bstrdup(local_72)`，把它写入 `wp+0xa4`
-- `websSetEnv(0x42ba68)` 又在 `0x42ba94-0x42bab8` 把同一字段作为 `QUERY_STRING`
-- 也就是说，旧报告把 `wp+0xa4` 的来源看成未知是错误的；它确实来自 request line 中 `'?'` 后的 `/cgi-bin`
-- 但本次真正导致 `SIGSEGV` 的空指针参数不是 `wp+0xa4`，而是未填充的 `var_2c`
+第四步。`websReadEvent`收到`Input == 1`后继续执行，此时当前状态已经是8，于是进入case 8分支：
+![alt text](image-4.png)
 
-## 为什么不是 `setWrlBasicInfo` 业务漏洞
+在这里，`*(_DWORD *)(a1 + 164)`已经由前序流程设置为非空字符串，且`(*(_DWORD *)(a1 + 216) & 0x2000) == 0`，因此程序会落入`else`分支，在0x42a214处执行`v1 = strlen(v11)`。由于上一步返回时`v11 == NULL`，这里最终触发空指针解引用并导致httpd进程崩溃。正常情况下程序本应继续读取请求体并在后续调用`websUrlHandlerRequest`，但在该异常状态转换下，崩溃先于正常处理逻辑发生。
 
-- `VulPacket.json.body.change=setWrlBasicInfo` 只是请求参数
-- 本次 trace 没有命中 `sym.formWifiBasicSet (0x44e1f8)`，也没有进入该 handler 内部的 `websGetVar("broadcastSsid")` 等路径
-- 崩溃发生在 HTTP 头结束后、业务 handler 分发前的公共解析状态机中
-- 因此这不是 `setWrlBasicInfo` 的业务逻辑漏洞，而是 `/bin/httpd` 自身的请求解析空指针解引用
 
-## 误报检查
+相关问题代码：
 
-- 为什么不是误报:
-  - 崩溃发生在真实入口进程 `/bin/httpd`，而不是 `/bin/sh` 噪声子进程
-  - trace 能把关键控制流闭环到具体 callsite: `websGetInput` 初始化输出为 `NULL` -> header 结束路径跳过回填 -> `websReadEvent` `strlen(NULL)`
-  - `container.console.log` 最终记录了 `SIGSEGV`
-- 为什么可以升级为 `确认漏洞`:
-  - source 已可解释: `POST`、`cgi-bin`、`Content-Length` 三个请求字段共同驱动状态机进入错误分支
-  - variable 已可解释: 调用者局部 `var_2c` 因跳过 `0x42aba0` 仍为 `NULL`
-  - sink 已可解释: `0x42a214-0x42a220` 把这个 `NULL` 直接作为 `strlen` 参数
-  - 关键 trace、callsite 和寄存器装载彼此一致，没有依赖旧报告或模糊字符串猜测
-
-## 证据
-
-- 关键 trace:
-  - `trace/bin_httpd.txt:744-822` 命中 `websGetInput`
-  - `trace/bin_httpd.txt:830-957` 命中 `parse_reqline(0x42abe4)`
-  - `trace/bin_httpd.txt:987-1063` 命中 `parse_headers(0x42b204)`
-  - `trace/bin_httpd.txt:1064-1069` 命中 `0x42aac4/0x42aae4/0x42ab00/0x42ab3c/0x42ab68/0x42abc8`
-  - `trace/bin_httpd.txt:1070-1077` 命中 `state=8` 入口并最终 `SIGSEGV`
-- 关键反汇编:
-  - `0x42a7c8-0x42a7e4`: `websGetInput` 初始化输出为 `NULL`
-  - `0x42aba0-0x42abbc`: 唯一的输出回填点
-  - `0x42acc0-0x42ad0c`: `POST` -> `wp->flags |= 0x20`
-  - `0x42af6c-0x42afb4`: `strstr(url,"cgi-bin")` -> `wp->flags |= 0x4000`
-  - `0x42b8b4-0x42b938`: `Content-Length` -> `wp->field_0xe0` / `wp->flags |= 0x400`
-  - `0x42aaac-0x42ab20`: `POST + Content-Length>0` -> `wp->state = 8`
-  - `0x42a214-0x42a220`: `move a0, var_2c` 后调用 `strlen`
-- 关键辅助日志:
-  - `container.console.log` 中 `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-  - `container.console.log` 中 `Segmentation fault (core dumped)`
+`websReadEvent`

@@ -1,173 +1,31 @@
-## 摘要
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `fcn.00439b28 @ 0x439b28` `0x439ba8`
-- Source位置: `/usr/sbin/uhttpd` `fcn.00439b28 @ 0x439b28` `0x439b5c`, `/usr/sbin/uhttpd` `fcn.00439b28 @ 0x439b28` `0x439b7c`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 内存破坏
-- 一句话根因: `wlacl_add` handler 把 `body.adr` 与超长 `body.device` 用 `sprintf("%s %s")` 拼进仅 260 字节的栈缓冲区 `sp+0x18`，覆盖保存的返回地址，函数返回时跳到 `0x32323232` 崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix + request.handler_name -> /apply.cgi?pls_wait.html`，定义原始请求 URL
-  - `body.submit_flag="wlacl_add" -> sym.cgi_setobject @ 0x40b95c` 选中 `wlacl_add` 对应 handler `fcn.00439b28`
-  - `body.device -> cgi_value("device") @ 0x439b5c -> v0 -> sprintf @ 0x439ba8` 的第 2 个 `%s`
-  - `body.adr -> cgi_value("adr") @ 0x439b7c -> s1 -> sprintf @ 0x439ba8` 的第 1 个 `%s`
-  - `sprintf` 输出 -> 栈缓冲区 `sp+0x18`，可用空间到保存的 `s0` 仅 `0x104` 字节
-  - 当前样本写入长度 `len(adr)=32` + 空格 `1` + `len(device)=256` + `NUL 1` = `290` 字节，超出缓冲区 `30` 字节
-  - 溢出数据中的 `'2'` 覆盖保存返回地址 -> 函数尾声经 `0x439bfc/0x439c00` 返回时跳转到 `0x32323232`
-- 执行顺序:
-  1. `/usr/sbin/uhttpd` 接收 `POST /apply.cgi?pls_wait.html`。
-  2. `sym.cgi_setobject @ 0x40b95c` 在 `0x40b9ac` 读取 `submit_flag`，匹配到 `wlacl_add`，分发到 `fcn.00439b28`。
-  3. `fcn.00439b28` 在 `0x439b5c` 读取 `device`，在 `0x439b7c` 读取 `adr`。
-  4. `0x439ba8` 调用 `sprintf(sp+0x18, "%s %s", adr, device)`，把 290 字节写进 260 字节栈缓冲区，覆盖保存寄存器和返回地址。
-  5. 函数继续执行 `add_items("wlacl", ...)` 和 `nvram_set("wl_acl_num", ...)`，但返回时使用已被 `'2'` 覆盖的返回地址，最终触发 `SIGSEGV si_addr=0x32323232`。
+漏洞名称：
+Netgear XWN5001 0x439b28 栈缓冲区溢出漏洞
 
-## 原始请求
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-- 方法: `POST`
-- URL: `/apply.cgi?pls_wait.html`
-- handler 来源: `VulPacket.json -> packet_1.request.prefix` 与 `packet_1.request.handler_name`
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个栈缓冲区溢出漏洞。远程攻击者可以通过向/apply.cgi?pls_wait.html发送构造的POST请求，在submit_flag=wlacl_add的处理路径中提供超长device参数，触发sprintf向固定栈缓冲区写入过长数据，最终覆盖返回地址并导致uhttpd进程崩溃，从而造成拒绝服务。
 
-body 中最关键的字段是：
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在wlacl_add处理分支内，程序会读取adr和device参数，并在0x439ba8处调用sprintf("%s %s")将两者拼接写入栈上的固定缓冲区。由于这里没有进行长度检查，超长device字段会覆盖保存寄存器和返回地址，最终在函数返回时触发崩溃。
 
-- `submit_flag = "wlacl_add"`
-- `device`，长度 `256`
-- `adr`，长度 `32`
+攻击者可以远程发起攻击，通过向/apply.cgi?pls_wait.html发送包含submit_flag=wlacl_add、超长device参数以及adr参数的POST请求触发漏洞。
 
-这些都是请求体参数，不是原始 URL；真正让程序进入漏洞路径的是 `request` 指定的 `/apply.cgi?pls_wait.html` 与 `body.submit_flag = wlacl_add` 的组合。
+漏洞研究环境：
 
-## 入口二进制与 Trace 映射
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `main`: `0x4047d4`
-- `trace_summary.json` 将入口 trace 精确匹配为 `trace/usr_sbin_uhttpd.txt`
-- 关键 trace:
-  - `pc=0x40b95c`
-  - `pc=0x40b9e4`
-  - `pc=0x40ba44`
-  - `pc=0x439b28`
-  - `pc=0x439b64`
-  - `pc=0x439b94`
-  - `pc=0x439bbc`
-  - `pc=0x439bd8`
-  - `pc=0x439bf4`
-  - `pc=0x439bfc`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x32323232} ---`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-这条 trace 没有 fork/execve，说明崩溃发生在 `uhttpd` 主进程内部。
+目标配置情况：
 
-## 关键数据流
+没有进行特殊配置，默认仿真环境启动。
 
-### 1. `submit_flag` 正常分发到 `wlacl_add`
+具体验证过程：
 
-`sym.cgi_setobject @ 0x40b95c` 的 trace 为：
+第一步。攻击者向/apply.cgi?pls_wait.html发送POST请求，并将submit_flag设置为wlacl_add，使程序进入ACL新增处理分支sub_439b28。程序读取adr和超长device参数，并在0x439ba8处通过sprintf将这两个字段拼接到栈上的固定缓冲区中。由于拼接后的数据超过缓冲区容量，返回地址等关键栈数据被覆盖，程序在函数返回时触发崩溃。
+![alt text](image.png)
+相关问题代码：
 
-- `0x40b9ac`: `cgi_value("submit_flag")`
-- `0x40b9e4`: 命中非空 `submit_flag`
-- `0x40ba44` 开始遍历 action 表
-- `0x439b28`: 进入 `wlacl_add` 对应处理函数
-
-因此该样本不是缺字段误报，而是确实进入了具体 handler。
-
-### 2. handler 两次读取用户输入
-
-`fcn.00439b28 @ 0x439b28` 的关键反汇编：
-
-- `0x439b48` 取 `sym.cgi_value`
-- `0x439b54`: key 为 `"device"`
-- `0x439b5c`: `cgi_value("device")`
-- `0x439b70`: key 为 `"adr"`
-- `0x439b7c`: `cgi_value("adr")`
-
-随后：
-
-- `0x439b84`: 若 `adr` 为空则跳过
-- `0x439b8c`: 若 `device` 为空则跳过
-
-当前样本中两者都存在，因此继续进入拼接路径。
-
-### 3. 栈缓冲区溢出发生在第一次 `sprintf`
-
-同一函数中：
-
-- `0x439b98`: `s0 = sp + 0x18`
-- `0x439b9c`: format 为 `"%s %s"`
-- `0x439ba0`: `a3 = v0`，即 `device`
-- `0x439ba4`: `a2 = s1`，即 `adr`
-- `0x439ba8`: `sprintf(s0, "%s %s", adr, device)`
-
-栈布局显示：
-
-- 缓冲区起点: `sp + 0x18`
-- 保存的 `s0`: `sp + 0x11c`
-- 因此缓冲区可用空间只有 `0x11c - 0x18 = 0x104 = 260` 字节
-
-当前输入长度：
-
-- `adr = 32`
-- `device = 256`
-- 拼接结果 `"adr + ' ' + device + '\\0'" = 290` 字节
-
-因此第一次 `sprintf` 必然越界 `30` 字节，覆盖保存的 `s0/s1/ra`。
-
-### 4. 为什么 crash 出现在函数尾部
-
-溢出发生后，函数还会继续执行：
-
-- `0x439bbc`: 调 `sym.add_items("wlacl", sp+0x18)`
-- `0x439bd8`: `sprintf(sp+0x18, "%d", idx)`
-- `0x439bf4`: `nvram_set("wl_acl_num", sp+0x18)`
-
-但这些操作只重写了缓冲区开头，没有恢复已经被覆盖的高地址保存区。随后：
-
-- `0x439bfc`: 开始函数尾声
-- `0x439c00`: 取回保存的 `ra`
-- trace 紧接着报 `si_addr=0x32323232`
-
-这与“返回地址被 `'2'` 覆盖，`jr ra` 跳到 `0x32323232`”完全一致。
-
-## 补充反编译证据
-
-### `sym.add_items @ 0x40ccfc`
-
-`0x439bbc` 调到的 `sym.add_items` 并不是漏洞本体。它的逻辑是：
-
-- `0x40cd48`: `sprintf(sp+0x18, "%s%d", prefix, idx)`，这里 prefix 是常量 `"wlacl"`
-- `0x40cd64`: `nvram_get("wlacl%d")`
-- `0x40cd88`: `nvram_set("wlacl%d", user_string)`
-
-这个函数负责把前面已经拼好的字符串插入第一个空的 `wlacl%d` 项。真正破坏栈的是进入它之前的 `sprintf("%s %s")`。
-
-## Trace / Console 证据
-
-### Trace
-
-- `usr_sbin_uhttpd.txt:683` 命中 `pc=0x40b95c`
-- `usr_sbin_uhttpd.txt:717` 命中 `pc=0x439bfc`
-- `usr_sbin_uhttpd.txt:718` 出现 `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x32323232} ---`
-
-### Console
-
-容器日志中的：
-
-- `wlacl1=Unknown`
-- `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-
-与 handler 里对 `wlacl` 项目的写入逻辑和最终崩溃现象一致。
-
-## 为什么这是确认漏洞
-
-这个样本已经具备完整闭环：
-
-- 可解释的 source:
-  - `cgi_value("device") @ 0x439b5c`
-  - `cgi_value("adr") @ 0x439b7c`
-- 可解释的 sink:
-  - `sprintf(sp+0x18, "%s %s", adr, device) @ 0x439ba8`
-- 可解释的数据流:
-  - `body.adr/body.device -> cgi_value -> sprintf varargs -> 栈缓冲区`
-- 与 trace/崩溃一致的后果:
-  - 返回地址被 `0x32` 覆盖
-  - epilogue 返回到 `0x32323232`
-  - `SIGSEGV`
-
-因此这不是环境噪声，也不是仅有现象没有根因的可疑样本，而是确定的栈溢出漏洞。
+0x439b28

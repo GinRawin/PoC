@@ -1,133 +1,31 @@
-# 漏洞分析: xwn5001-0.4.1.1.zip / id:000008,shmid:11,addr:0xffffffff,-1
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-## 摘要
+漏洞名称：
+Netgear XWN5001 0x43a008 空指针解引用漏洞
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `0x43a008` `0x43a164`
-- Source位置: `/usr/sbin/uhttpd` `0x43a008` `0x43a040`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 参数校验缺失
-- 一句话根因: `submit_flag=security_question` 进入安全问题 handler `0x43a008` 后，程序读取 `PWD_answer1/PWD_answer2` 但不检查返回值是否为空；当请求缺失这两个字段时，错误分支仍把 `NULL` 作为 value 传给 `nvram_set`，最终在 `0x43a154` 之后触发 `SIGSEGV(NULL)`。
-- 数据包字段 -> 变量赋值:
-  - `request.method=POST`，`request.prefix=/`，`request.handler_name=apply.cgi?Change_pvc_num` -> 原始请求 URL `/apply.cgi?Change_pvc_num`
-  - `packet_1.body.submit_flag="security_question"` -> `sym.cgi_setobject` 中 `cgi_value("submit_flag") @ 0x40b9ac` -> 分发表项 `0x471cac` -> handler `0x43a008`
-  - `packet_1.body.PWD_answer1` 缺失 -> `cgi_value("PWD_answer1") @ 0x43a040` 返回 `NULL` -> 保存到 `s0`
-  - `packet_1.body.PWD_answer2` 缺失 -> `cgi_value("PWD_answer2") @ 0x43a060` 返回 `NULL` -> 保存到 `s1`
-  - `s0(NULL)` -> `nvram_set("last_error_ans1", s0)` 的 value 参数，调用点 `0x43a164`
-  - `s1(NULL)` 原本还会继续流向 `nvram_set("last_error_ans2", s1)`，但程序先在前一个空 value 路径上崩溃
-- 执行顺序:
-  1. `uhttpd` 处理 `packet_1` 的 `POST /apply.cgi?Change_pvc_num`
-  2. `0x406c28 -> 0x406eb0 -> sym.cgi_setobject(0x40b95c)` 解析 POST body
-  3. `0x40b9ac` 读取 `submit_flag`，命中 `"security_question"` 表项 `0x471cac`，跳到 `0x43a008`
-  4. `0x43a040` 和 `0x43a060` 依次读取 `PWD_answer1`、`PWD_answer2`，两者都因字段缺失而返回 `NULL`
-  5. handler 进入错误分支，在 `0x43a14c` 先执行 `nvram_set("enter_answer_again","1")`，然后在 `0x43a164` 准备执行 `nvram_set("last_error_ans1", NULL)`，随即出现 `SIGSEGV(NULL)`
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-## 原始请求
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?Change_pvc_num发送构造的POST请求，在submit_flag=security_question的处理路径中省略answer1关键字段，触发后续NVRAM写入流程对空指针进行使用，最终导致uhttpd进程崩溃，从而造成拒绝服务。
 
-这个样本有两个 packet，但真正触发崩溃的是 `packet_1`:
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在安全问题配置处理分支内，程序会读取answer1参数，但没有对返回值进行有效检查。当前请求缺少这些字段时，程序仍继续在0x43a164附近将空指针传入后续配置写入逻辑，最终触发SIGSEGV。
 
-- 方法: `POST`
-- URL: `/apply.cgi?Change_pvc_num`
-- 依据: `packet_1.request.prefix="/"` 与 `packet_1.request.handler_name="apply.cgi?Change_pvc_num"`
-- 关键 body:
-  - `submit_flag=security_question`
-  - 存在 `answer2`
-  - 不存在 `PWD_answer1`
-  - 不存在 `PWD_answer2`
+攻击者可以远程发起攻击，通过向/apply.cgi?Change_pvc_num发送包含submit_flag=security_question且缺少answer1参数的POST请求触发漏洞。
 
-`packet_2` 是后续的 `GET /PLC_scan_result.htm`，但本次 trace 已在 `packet_1` 的 `security_question` handler 内崩溃，因此 `packet_2` 不是触发源。
+漏洞研究环境：
 
-## 入口二进制与 Trace 映射
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- 固件入口二进制: `/usr/sbin/uhttpd`
-- `binary_summary.json` 已恢复 `main=0x4047d4`
-- `trace_summary.json` 将入口 trace 命名为 `trace/usr_sbin_uhttpd.txt`
-- 关键 trace 片段:
-  - `usr_sbin_uhttpd.txt:646` `pc=0x406c28`
-  - `usr_sbin_uhttpd.txt:670` `pc=0x40b95c`
-  - `usr_sbin_uhttpd.txt` 随后出现 `0x40ba44 -> 0x40ba10 -> 0x43a008`
-  - `usr_sbin_uhttpd.txt` 继续执行到 `0x43a048 -> 0x43a068 -> 0x43a080 -> 0x43a0b4 -> 0x43a13c -> 0x43a154`
-  - `usr_sbin_uhttpd.txt:703` `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-没有子进程 `fork/execve` 参与漏洞触发；问题发生在 `uhttpd` 进程内部。
+目标配置情况：
 
-## 关键静态证据
+没有进行特殊配置，默认仿真环境启动。
 
-### 1. `submit_flag=security_question` 确实映射到 `0x43a008`
+具体验证过程：
 
-手工解码 `cgi_setobject` 分发表 `0x471c64` 附近:
+第一步。攻击者向/apply.cgi?Change_pvc_num发送POST请求，并将submit_flag设置为security_question，使程序进入安全问题配置处理分支sub_43a008。程序在该分支中读取answer1参数，但当前请求缺少这些字段，因此返回值为空。程序在0x43a164附近继续将空指针用于后续配置写入流程，最终触发空指针解引用并导致uhttpd进程崩溃。
+![alt text](image.png)
+相关问题代码：
 
-- `0x471ca0 -> { "match_sn", 0x0, 0x43a1b0 }`
-- `0x471cac -> { "security_question", 0x0, 0x43a008 }`
-- `0x471cb8 -> { "ping", 0x3a, 0x40abfc }`
-- `0x471cc4 -> { "Change_pvc_num", 0x0, 0x40b590 }`
-
-所以这里虽然原始 URL 是 `/apply.cgi?Change_pvc_num`，真正决定业务分支的是 body 里的 `submit_flag=security_question`。
-
-### 2. `0x43a008` 先读 `PWD_answer1/PWD_answer2`，后面直接把它们传给 `nvram_set`
-
-`0x43a008` 附近反汇编可解释为:
-
-- `0x43a040`: `cgi_value("PWD_answer1", req, ...)`
-- `0x43a060`: `cgi_value("PWD_answer2", req, ...)`
-- `0x43a078`: `nvram_get("PWD_answer1")`
-- `0x43a090`: `strcpy(sp+0x18, old_pwd_answer1_or_default)`
-- `0x43a0a8`: `nvram_get("PWD_answer2")`
-- `0x43a0c4`: `strcpy(sp+0x98, old_pwd_answer2_or_default)`
-- `0x43a0d8`: `if (s0 == NULL) goto 0x43a13c`
-- `0x43a0e0`: `if (s1 == NULL) goto 0x43a13c`
-- `0x43a14c`: `nvram_set("enter_answer_again", "1")`
-- `0x43a164`: `nvram_set("last_error_ans1", s0)`
-- `0x43a17c`: `nvram_set("last_error_ans2", s1)`
-
-对应字符串:
-
-- `0x45eae0 -> "PWD_answer1"`
-- `0x45eaec -> "PWD_answer2"`
-- `0x45eaf8 -> "enter_answer_again"`
-- `0x45eb0c -> "last_error_ans1"`
-- `0x45eb1c -> "last_error_ans2"`
-
-## Source -> Variable -> Sink 数据流
-
-当前样本的关键数据流是:
-
-1. `packet_1.body.submit_flag="security_question"` 被 `0x40b9ac` 读取，用于选择 handler `0x43a008`
-2. `packet_1.body.PWD_answer1` 在 `0x43a040` 被读取，但字段缺失，返回 `NULL`
-3. 这个返回值通过第二次 `cgi_value` 调用的 delay slot 保存到 `s0`
-4. `packet_1.body.PWD_answer2` 在 `0x43a060` 被读取，同样缺失，返回 `NULL`
-5. 该值保存到 `s1`
-6. 程序命中错误分支 `0x43a13c`
-7. `0x43a164` 处继续用 `s0` 作为 `nvram_set("last_error_ans1", s0)` 的 value 参数
-8. 由于 `s0 == NULL`，后续 `nvram_set` 内部解引用空指针，trace 在 `0x43a154` 后报 `SIGSEGV(NULL)`
-
-这是标准的“缺参 -> 空指针未校验 -> 危险调用”链条。
-
-## Console / Trace 佐证
-
-`container.console.log` 中有:
-
-- `PWD_answer1=Unknown`
-- `PWD_answer2=Unknown`
-- `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-
-这与 `nvram_get("PWD_answer1") / nvram_get("PWD_answer2")` 在字段缺失时走默认/Unknown 路径的静态逻辑完全一致，也进一步说明崩溃点就在安全问题校验分支内部。
-
-## 结论
-
-这不是证据不足，而是可确认的参数校验缺失漏洞。
-
-确认依据有四条:
-
-1. `packet_1` 的 `submit_flag=security_question` 到 handler `0x43a008` 的映射可以精确恢复
-2. 真实 source 已定位为 `cgi_value("PWD_answer1") @ 0x43a040` 和 `cgi_value("PWD_answer2") @ 0x43a060`
-3. 真实 sink 已定位为错误分支中的 `nvram_set("last_error_ans1", s0)` 调用点 `0x43a164`
-4. trace 的 `SIGSEGV(NULL)` 与“把缺失字段返回的 NULL 继续传给 nvram_set”完全吻合
-
-根因不是 body 中那些超长 `ether_*` / `wan_*` 字段，而是:
-
-- 请求用 `submit_flag=security_question` 进入安全问题校验逻辑
-- 但没有提供 handler 所要求的 `PWD_answer1/PWD_answer2`
-- 程序没有在错误分支里验证这两个指针是否为空
-- 继续把 `NULL` 作为 NVRAM value 传入写入函数，最终崩溃
-
+0x43a008

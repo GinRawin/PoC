@@ -1,73 +1,31 @@
-## 摘要
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `fcn.004399ac @ 0x4399ac` `atoi(v0) @ 0x4399f4`
-- Source位置: `/usr/sbin/uhttpd` `fcn.004399ac @ 0x4399ac` `cgi_value("wl_acl_editnum") @ 0x4399e4`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 内存破坏
-- 一句话根因: ACL 编辑/删除分支直接读取 `wl_acl_editnum` 并调用 `atoi`，字段缺失时 `cgi_value` 返回 `NULL`，后续 `atoi(NULL)` 崩溃。
-- 数据包字段 -> 变量赋值:
-  - `packet_1.request.prefix + packet_1.request.handler_name -> POST /apply.cgi?ﾌﾃ`
-  - `packet_1.body.submit_flag=wlacl_edit -> 进入 ACL 编辑相关路径`
-  - `packet_2.request.prefix + packet_2.request.handler_name -> POST /apply.cgi`
-  - `packet_2.body.submit_flag=wlacl_del -> 进入同族 ACL 删除路径`
-  - `packet_2.body.wl_acl_editnum` 缺失 -> `cgi_value("wl_acl_editnum") @ 0x4399e4` 返回 `NULL`
-  - `NULL -> move a0, v0 @ 0x4399f8 -> atoi(a0) @ 0x4399f4`
-- 执行顺序:
-  1. 第一包先经过普通收尾和子进程刷新逻辑。
-  2. 主 trace 后续进入 `0x4399ac` 的 ACL 编辑/删除 helper。
-  3. 该函数调用 `cgi_value("wl_acl_editnum")` 读取编辑索引。
-  4. 当前样本没有提供该字段，console 打印 `wl_acl_editnum=Unknown`。
-  5. 代码继续调用 `atoi(NULL)`，trace 在调用点附近以 `SIGSEGV si_addr=NULL` 结束。
+漏洞名称：
+Netgear XWN5001 0x4399ac 空指针解引用漏洞
 
-## 原始请求
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-- 第一包:
-  - 方法: `POST`
-  - URL: `/apply.cgi?ﾌﾃ`
-  - 关键 body: `submit_flag=wlacl_edit`
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?c发送构造的POST请求，在ACL编辑或删除处理路径中省略select_del参数，触发后续数值转换流程对空指针进行使用，最终导致uhttpd进程崩溃，从而造成拒绝服务。
 
-- 第二包:
-  - 方法: `POST`
-  - URL: `/apply.cgi`
-  - 关键 body: `submit_flag=wlacl_del`
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在ACL编辑/删除处理分支内，程序会读取select_del参数，并在0x4399f4处直接调用atoi对其进行转换。由于这里没有检查cgi_value的返回值是否为空，当请求中缺少select_del时，程序会执行atoi(NULL)并触发SIGSEGV。
 
-## 入口二进制与 Trace 映射
+攻击者可以远程发起攻击，通过向/apply.cgi?c发送包含submit_flag=wlacl_del且缺少select_del参数的POST请求触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `trace_summary.json` 显示 `main = 0x4047d4`
-- 命中 trace: `trace/usr_sbin_uhttpd.txt`
-- 关键 trace:
-  - `pc=0x406b60`
-  - `19 exit(0)`
-  - `pc=0x4399ac`
-  - `pc=0x40b514`
-  - `pc=0x4399ec`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+漏洞研究环境：
 
-## 关键代码证据
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- 字符串表:
-  - `wlacl_edit`
-  - `wlacl_del`
-  - `wl_acl_editnum`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-- 反汇编关键点:
-  - `0x4399d0`: 加载 `cgi_value`
-  - `0x4399dc`: 参数字符串 `wl_acl_editnum`
-  - `0x4399e4`: `jalr t9 ; cgi_value`
-  - `0x4399ec`: 恢复 `gp`
-  - `0x4399f0`: 加载 `atoi`
-  - `0x4399f4`: `jalr t9 ; atoi`
-  - `0x4399f8`: `move a0, v0`
+目标配置情况：
 
-## 为什么这是确认漏洞
+没有进行特殊配置，默认仿真环境启动。
 
-证据已经闭环:
+具体验证过程：
 
-- source: `cgi_value("wl_acl_editnum")`
-- variable: `v0`
-- sink: `atoi(v0)`
-- 运行时证据: `wl_acl_editnum=Unknown` + `SIGSEGV si_addr=NULL`
+第一步。攻击者向/apply.cgi?c发送POST请求，并将submit_flag设置为wlacl_del，使程序进入ACL编辑或删除处理分支sub_4399ac。程序在该分支中尝试读取select_del参数，但当前请求没有提供该字段，因此返回值为空。程序在0x4399f4处继续将该空指针传入atoi进行数值转换，最终触发空指针解引用并导致uhttpd进程崩溃。
+![alt text](image.png)
+相关问题代码：
 
-因此这是 `uhttpd` 内部真实存在的缺字段未判空漏洞。
+0x4399ac

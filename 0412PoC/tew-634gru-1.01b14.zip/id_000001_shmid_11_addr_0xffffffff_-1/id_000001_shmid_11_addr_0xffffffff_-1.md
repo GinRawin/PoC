@@ -1,123 +1,35 @@
-# 漏洞分析: tew-634gru-1.01b14.zip / id:000001,shmid:11,addr:0xffffffff,-1
+https://www.trendnet.com/support/support-detail.asp?prod=180_TEW-634GRU
 
-## 摘要
+漏洞名称：
+Trendnet TEW-634GRU 0x40c8b0 命令注入漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/sbin/httpd 0x40a654 0x40c9f8`
-- Source位置: `/sbin/httpd 0x40a654 0x40c994`
-- 漏洞二进制: `/sbin/httpd`
-- 漏洞类型: `命令注入`
-- 一句话根因: `do_apply_post` 从 `body.ntp_server` 读取用户输入后，在栈上用 `sprintf("ntpclient -h %s -s -i 5 -c 1", ntp_server)` 组装 shell 命令，并通过 `_system()` 交给 `/bin/sh -c` 执行，输入未做 shell 级过滤。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix="/" + request.handler_name="ntp_sync.cgi*"` -> 选择 NTP 同步处理分支
-  - `body.ntp_server` -> `get_cgi("ntp_server")` 返回值 `s0` -> `sprintf` 的 `%s` 参数 `a2` -> 栈上命令缓冲区 `sp+0x18`
-  - `body.ntp_server` -> `/bin/sh -c "ntpclient -h <ntp_server> -s -i 5 -c 1"` -> `/sbin/ntpclient -h <ntp_server>`
-  - `body.html_response_page` / `body.html_response_return_page` / `body.revoke_ip` / `body.revoke_mac` / `body.test` -> 本次已确认路径中未观察到进入命令模板
-- 执行顺序:
-  1. `POST /ntp_sync.cgi*` 命中 NTP 同步处理逻辑。
-  2. `do_apply_post` 在 `0x40c994` 调用 `get_cgi("ntp_server")` 取出 `body.ntp_server`。
-  3. `do_apply_post` 在 `0x40c9c4` 调用 `sprintf`，用模板 `ntpclient -h %s -s -i 5 -c 1` 生成命令字符串。
-  4. `do_apply_post` 在 `0x40c9f8` 调用 `_system()`，随后 `httpd` fork 并 `execve("/bin/sh", {"sh","-c","ntpclient -h 2222... -s -i 5 -c 1"})`。
-  5. shell 再派生 `/sbin/ntpclient -h 2222...`；`Unknown host` 和后续 `SIGSEGV` 是命令执行后的次生现象，不影响命令注入链条成立。
+Trendnet TEW-634GRU 1.01B14是Trendnet公司旗下的一款路由器固件，受影响产品为TEW-634GRU，受影响版本为1.01B14。
 
-## 原始请求
+Trendnet TEW-634GRU 1.01B14的/sbin/httpd二进制文件中存在一个命令注入漏洞。远程攻击者可以通过向/ntp_sync.cgi*发送构造的POST请求，控制ntp_server参数内容，使其进入shell命令拼接流程并被/bin/sh -c执行，从而造成任意命令执行。
 
-- 方法: `POST`
-- URL: `/ntp_sync.cgi*`
-- handler: `ntp_sync.cgi*`
-- URL 来源: `VulPacket.json` 中 `packet_1.request.prefix="/"` 与 `packet_1.request.handler_name="ntp_sync.cgi*"`
-- body 参数:
-  - `test`
-  - `html_response_return_page`
-  - `revoke_ip`
-  - `revoke_mac`
-  - `html_response_page`
-  - `ntp_server`
+该漏洞位于二进制文件/sbin/httpd中，在do_apply_post函数的NTP同步处理分支内，程序在0x40c994处读取ntp_server参数，在0x40c9c4处通过sprintf将用户输入拼接进ntpclient -h %s -s -i 5 -c 1命令字符串，随后在0x40c9f8处调用_system执行该命令。由于整个过程没有对用户输入进行shell级过滤，因此攻击者可以构造恶意参数触发命令注入。
 
-这里要区分:
+攻击者可以远程发起攻击，通过向/ntp_sync.cgi*发送包含恶意ntp_server参数的POST请求触发漏洞。
 
-- 原始请求 URL 是 `/ntp_sync.cgi*`
-- `ntp_server` 是 body 参数值，不是 URL；它在后续数据流里被拿来填入 shell 命令模板
+漏洞研究环境：
 
-## Trace映射
+通过模拟仿真进行验证。当前附件中提供了对应的rehost环境，原始固件可通过上述下载链接获取。
 
-- 入口二进制: `/sbin/httpd`
-- `main` 地址: `0x40582c`
-- 命中的入口 trace: `trace/sbin_httpd.txt`
-  - `trace_summary.json` 已自动匹配 `main_addr=0x40582c`
-  - 匹配策略: `exact_main`
-- 子进程链:
-  - `httpd(pid 14)` -> `fork()` -> `sh(pid 17)` -> `fork()` -> `ntpclient(pid 20)`
-- 关键 trace:
-  - `trace/sbin_httpd.txt:341-344`
-    - `pc=0x436b00`
-    - `14 fork() = 17`
-    - `14 fork() = 0`
-    - `17 execve("/bin/sh",{"sh","-c","ntpclient -h 22222222222222222222222222222222 -s -i 5 -c 1",NULL}) = 0`
-  - `trace/17_tb_log.txt:573-687`
-    - `17 fork() = 20`
-    - `20 execve("/sbin/ntpclient",{"ntpclient","-h","22222222222222222222222222222222","-s","-i","5","-c","1",NULL}) = 0`
-  - `trace/sbin_httpd.txt:365`
-    - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x202d6920} ---`
-  - `trace/20_tb_log.txt:62`
-    - `20 exit(1)`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/tew-634gru-1.01b14.zip/tew-634gru-1.01b14.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 关键数据流
+目标配置情况：
 
-`do_apply_post` 中的关键片段位于 `0x40c978-0x40c9fc`:
+没有进行特殊配置，默认仿真环境启动。
 
-- `0x40c978-0x40c994`
-  - 调用 `get_cgi("ntp_server")`
-  - 返回值保存在 `s0`
-- `0x40c9a0-0x40c9c4`
-  - `sprintf(sp+0x18, "ntpclient -h %s -s -i 5 -c 1", s0)`
-- `0x40c9d0-0x40c9e4`
-  - 使用 `ntp_sync_cgi: cmd=%s` 打印拼接后的命令
-- `0x40c9f0-0x40c9fc`
-  - `_system(sp+0x18)`
+具体验证过程：
 
-因此数据流可以明确写成:
+第一步。攻击者向/ntp_sync.cgi*发送POST请求，请求中携带ntp_server参数，使程序进入NTP同步处理分支。
 
-- `body.ntp_server`
-  -> `get_cgi("ntp_server")`
-  -> `s0`
-  -> `sprintf` arg#3 (`%s`)
-  -> 栈缓冲区 `sp+0x18`
-  -> `_system(sp+0x18)`
-  -> `/bin/sh -c`
-  -> `/sbin/ntpclient -h <user_input>`
+第二步。程序在0x40c994处读取ntp_server参数内容，并在0x40c9c4处将其拼接到ntpclient -h %s -s -i 5 -c 1命令模板中。
 
-## Console与反编译证据
+第三步。程序在0x40c9f8处调用_system执行拼接后的命令，请求参数最终经/bin/sh -c解释执行，造成命令注入。
+![alt text](image.png)
+相关问题代码：
 
-- `container.console.log`
-  - `ntp_sync_cgi: cmd=ntpclient -h 22222222222222222222222222222222 -s -i 5 -c 1`
-  - `[qemu] doing qemu_execven on filename /bin/sh`
-  - `[qemu] doing qemu_execven on filename /sbin/ntpclient`
-  - `22222222222222222222222222222222: Unknown host`
-- 二进制字符串
-  - `ntp_server`
-  - `ntpclient -h %s -s -i 5 -c 1`
-  - `ntp_sync_cgi: cmd=%s`
-- 关键反汇编
-  - `0x40c980 addiu a0, ..., "ntp_server"`
-  - `0x40c994 jalr t9` -> `get_cgi`
-  - `0x40c9a8 addiu a1, ..., "ntpclient -h %s -s -i 5 -c 1"`
-  - `0x40c9c4 jalr t9` -> `sprintf`
-  - `0x40c9e0 jalr t9` -> 日志打印 `ntp_sync_cgi: cmd=%s`
-  - `0x40c9f0 lw t9, -sym.imp._system(gp)`
-  - `0x40c9f8 jalr t9` -> `_system`
-
-## 为什么这是确认漏洞
-
-- 已有可解释 source:
-  - `get_cgi("ntp_server")` 在 `0x40c994`
-- 已有可解释 sink:
-  - `_system()` 在 `0x40c9f8`
-- 已有完整 `source -> variable -> sink` 闭环:
-  - `body.ntp_server -> s0 -> sprintf("%s") -> sp+0x18 -> _system -> /bin/sh -c`
-- trace / console / 反编译三者一致:
-  - console 打印了完整拼接命令
-  - trace 显示 `/bin/sh -c` 执行该命令
-  - 进一步 trace 到 `/sbin/ntpclient -h <user_input>`
-
-后续的 `Unknown host`、`exit(1)` 与 `SIGSEGV` 只是当前 payload 和模拟环境下的运行结果；命令注入危险行为在 shell 启动时就已经成立，不需要依赖这些次生现象来证明。
+0x40c8b0

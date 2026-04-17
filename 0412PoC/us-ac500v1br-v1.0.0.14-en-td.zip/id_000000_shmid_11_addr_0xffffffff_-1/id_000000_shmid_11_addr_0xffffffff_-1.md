@@ -1,89 +1,45 @@
-# 漏洞分析: us-ac500v1br-v1.0.0.14-en-td.zip / id:000000,shmid:11,addr:0xffffffff,-1
+https://github.com/GinRawin/PoC/blob/main/0412PoC/us-ac500v1br-v1.0.0.14-en-td.zip/IMG_US_AC500V1BR_V1.0.0.14_en_TD.rar
 
-## 摘要
+漏洞名称：
+Tenda AC500 0x279d4 空指针解引用漏洞
 
-- 判定: `确认漏洞`
-- Sink位置: `/bin/httpd fcn.000279d4 0x00027b7c`
-- Source位置: `/bin/httpd fcn.000282a8 0x000282d8`
-- 漏洞二进制: `/bin/httpd`
-- 漏洞类型: `参数校验缺失`
-- 一句话根因: `httpd` 接受了畸形请求路径 `/index.asp?/cgi-bin`，导致请求对象中的重定向缓冲区未初始化；`formQuickIndex` 提交完成后进入统一跳转路径，`fcn.000279d4` 在未判空的情况下对该字段执行 `strlen`，最终触发空指针崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix="/" + request.handler_name="/index.asp?/cgi-bin"` -> 请求行 URI token -> `fcn.000282a8` 解析后的 request state -> `ctx+0xa4` 重定向字符串保持为 `NULL`
-  - `body.wans="1"` -> `formQuickIndex` 提交后的回跳参数名 `"wans"` -> `sym.formQuickIndex` 在 `0x0003ea78` 调用 `fcn.000294d8(ctx, "wans")`
-  - `body.test` -> 当前 trace/反汇编中未观察到参与崩溃路径
-- 执行顺序:
-  1. `httpd` 接收 `POST /index.asp?/cgi-bin HTTP/1.1`，在 `fcn.000282a8` 中用 `strtok` 拆分请求行并接受了畸形 URI。
-  2. 请求进入 `sym.formQuickIndex`，期间派生多个 `/bin/sh` 子进程执行 `killall -9 dhcps`、`rm -rf /etc/cert`、`route add default gw`、`cfm Post netctrl 58`。
-  3. `sym.formQuickIndex` 在 `CommitCfm` 成功后调用 `fcn.000294d8(..., "wans")` 生成跳转页面。
-  4. 跳转辅助路径进入 `fcn.0001cc70 -> fcn.000279d4`，`fcn.000279d4` 在 `0x00027b7c` 对 `ctx+0xa4` 调用 `strlen`。
-  5. 由于该字段仍为 `NULL`，入口进程 `20_tb_log.txt` 在结尾触发 `SIGSEGV`，console 也记录了 `Segmentation fault (core dumped)`。
+Tenda AC500是Tenda公司旗下的一款路由器固件，受影响固件名称为us-ac500v1br-v1.0.0.14-en-td，受影响版本为V1.0.0.14。
 
-## 原始请求
+us-ac500v1br-v1.0.0.14-en-td
+Tenda AC500的/bin/httpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过发送构造的POST请求触发HTTP请求解析状态机异常，在请求头解析结束后使程序进入错误分支，并在后续对空指针执行strlen，从而导致httpd进程崩溃，造成拒绝服务。
 
-- 方法: `POST`
-- URL来源: `VulPacket.json.packet_1.request`
-- 路径还原: `/index.asp?/cgi-bin`
-- handler 解释: 原始请求路径来自 `request.handler_name`，不是 `body` 中的任意字段
-- body 参数:
-  - `test=22222222222222222222222222222222`
-  - `wans=1`
+该漏洞位于二进制文件/bin/httpd中，关键调用链为sub_279D4 -> sub_27F1C -> sub_282A8 -> sub_27F1C -> sub_28694 -> sub_279D4(case 8)。在处理POST请求并解析到包含cgi-bin和Content-Length的特定请求后，程序没有正确填充新的请求体指针s，并且缺乏对s是否为空指针的见擦汗。之后sub_279D4在case 8分支的0x27b70处执行v2 = strlen(s)触发SIGSEGV。
 
-## Trace映射
+攻击者可以远程发起攻击，通过向//index.asp?/cgi-bin发送构造的POST请求来触发漏洞。
 
-- 入口二进制: `/bin/httpd`
-- 入口 trace: `trace/20_tb_log.txt`
-  - 该文件从 ELF 入口 `pc=0xd5f0` 开始，且在末尾出现 `SIGSEGV`
-- 子进程链:
-  - `20 -> 22 execve("/bin/sh","sh","-c","killall -9 dhcps")`
-  - `20 -> 28 execve("/bin/sh","sh","-c","rm -rf /etc/cert")`
-  - `20 -> 34 execve("/bin/sh","sh","-c","echo " nameserver 8.8.8.8" > /etc/resolv.conf")`
-  - `20 -> 37 execve("/bin/sh","sh","-c","route add default gw ")`
-  - `20 -> 43 execve("/bin/sh","sh","-c","echo '' > /tmp/userListFile")`
-  - `20 -> 46 execve("/bin/sh","sh","-c","cfm Post netctrl 58")`
-- 关键 trace 证据:
-  - `trace/20_tb_log.txt:161` `46 execve("/bin/sh",{"sh","-c","cfm Post netctrl 58",NULL}) = 0`
-  - `trace/20_tb_log.txt:1392` `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+漏洞研究环境：
 
-## 关键数据流
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- `fcn.000282a8` 从请求行中拆出 URI token；该路径对 `/index.asp?/cgi-bin` 这种畸形 `index.asp?` + `cgi-bin` 组合未做拒绝。
-- `sym.formQuickIndex` 在 `0x0003ea30` 调用 `CommitCfm`，随后在 `0x0003ea78` 调用 `fcn.000294d8(ctx, "wans")` 构造跳转目标。
-- `fcn.000294d8` 会基于 `HTTP_HOST` 和传入的参数名拼接 `http://%s/%s` 形式的目标，再继续进入 HTML/redirect 包装逻辑。
-- 包装逻辑进入 `fcn.0001cc70`，最终在 `0x0001cd58` 调用 `fcn.000279d4`。
-- `fcn.000279d4` 的崩溃分支会先取 `ctx+0xa4`，随后在 `0x00027b7c` 执行 `strlen(ctx->a4)`；当前请求状态下该字段仍为 `NULL`，于是触发空指针解引用。
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/us-ac500v1br-v1.0.0.14-en-td.zip/us-ac500v1br-v1.0.0.14-en-td.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 关键反汇编证据
+目标配置情况：
 
-- `sym.formQuickIndex`
-  - `0x0003ea30` `bl sym.imp.CommitCfm`
-  - `0x0003ea70` 附近引用字符串 `"wans"`
-  - `0x0003ea78` `bl fcn.000294d8`
-- `fcn.0001cc70`
-  - `0x0001cd58` `bl fcn.000279d4`
-- `fcn.000279d4`
-  - `0x00027b74` `mov r0, r3`
-  - `0x00027b7c` `bl sym.imp.strlen`
-  - 该分支前仅检查 `ctx+0xa4` 是否为非空字符串的某些状态位，没有保证指针本身已经初始化
+没有进行特殊配置，默认仿真环境启动。
 
-## Console与判定理由
+具体验证过程：
 
-- `container.console.log` 末尾出现:
-  - `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-  - `[GreenHouseQEMU] SIG 11`
-  - `Segmentation fault (core dumped)`
-- 这不是单纯环境噪声:
-  - 崩溃发生在 `httpd` 主进程自身，而不是某个外部工具进程
-  - trace 给出了稳定的 `CommitCfm -> redirect helper -> fcn.000279d4 -> SIGSEGV` 闭环
-  - 静态分析可以解释 `si_addr=NULL`，并与 `0x00027b7c` 的 `strlen(NULL)` 型崩溃一致
+第一步。攻击者向//index.asp?/cgi-bin发送POST请求，请求中包含Content-Length和请求体数据，使程序进入函数sub_279d4。
 
-## 误报检查
+第二步。进入sub_279d4的while循环，进入sub_279d4的case 1分支，程序首先在sub_282A8中解析请求行，识别到URI中的cgi-bin标志后设置a1[54] |= 0x4000，a1[54] |= 0x20u，a1[41]指向"/cgi-bin"。sub_279d4设置a1[53]为2，数据包读取了第一行。
+![alt text](image-7.png)
+![alt text](image-1.png)
+![alt text](image-6.png)
+第三步。回到sub_279d4的while循环，在第二次调用函数sub_27F1C时，由于第二步中设置a1[54] |= 0x4000，因此v11=1。
+![alt text](image-4.png)
+sub_27F1c中调用sub_28694解析Content-Length，设置了a1[56] (即(a1+224))的值，且a1[54] |= 0x400u。
+![alt text](image-10.png)
+因此在sub_27F1C中，a1[54] &= 0x400u和a1[54] &= 0x20u都不是0，将a1[53]设置为8，在清空了指针s又没有填充s的情况下返回1.
+![alt text](image-8.png)
+![alt text](image-9.png)
+第三步。sub_279D4回到case 8分支后继续使用该空指针s，由于a1[41][0]不是空字符且a1[54]的0x2000位置只有case 4或case 8结束后才可能设置为1，因此程序进入0x27b70处执行v2 = strlen(s)，最终触发空指针解引用并导致httpd进程崩溃。
+![alt text](image-11.png)
+相关问题代码：
 
-- 不是误报的原因:
-  - 可解释的 source: 畸形请求 URL 在 `fcn.000282a8` 被接受
-  - 可解释的 sink: `fcn.000279d4` 在 `0x00027b7c` 对空指针执行 `strlen`
-  - 可解释的数据流: `request URL -> request state(ctx+0xa4 未初始化) -> CommitCfm 后 redirect helper -> strlen(NULL)`
-  - 与 trace/console/反汇编三者一致
-- 剩余不确定点:
-  - `ctx+0xa4` 的语义名称在 stripped 二进制中无法直接恢复，只能确认其为跳转/拼接用字符串字段
-  - `body.wans` 更像触发 `formQuickIndex` 提交后回跳逻辑的上下文参数，而不是直接写入崩溃指针本身
+sub_279D4

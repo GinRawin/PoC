@@ -1,90 +1,31 @@
-## 摘要
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` 函数 `0x4376dc` 内 `strcmp@0x4377b4`
-- Source位置: `/usr/sbin/uhttpd` 函数 `0x4376dc` 内 `cgi_value("wla_enable_router")@0x437798`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 参数校验缺失
-- 一句话根因: `config_wladv` 路径直接把缺失的 `wla_enable_router` CGI 参数送进 `strcmp`，没有做空指针检查，导致 `strcmp(NULL, "0")` 崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix="/"` + `request.handler_name="apply.cgi?debuginfo.htm"` -> 原始请求 URL `/apply.cgi?debuginfo.htm`
-  - `body.submit_flag="wlan_adv"` -> 命中 `config_wladv` 处理路径
-  - `body.wl_enable_router="1"` -> `cgi_value("wl_enable_router")@0x437778` 返回非空
-  - `body` 中缺少 `wla_enable_router` -> `cgi_value("wla_enable_router")@0x437798` 返回 `NULL` -> `s1`
-  - `s1(NULL)` -> `strcmp(s1, const)@0x4377b4` -> `SIGSEGV si_addr=NULL`
-- 执行顺序:
-  1. `/usr/sbin/uhttpd` 接收 `POST /apply.cgi?debuginfo.htm`，`submit_flag=wlan_adv` 进入 `config_wladv`。
-  2. 函数先处理 `ap_netbiosname` 等前置逻辑并打印 `config_wladv` 日志。
-  3. `0x437778` 读取 `wl_enable_router`，`0x437798` 读取 `wla_enable_router`。
-  4. `0x4377b4` 将 `wla_enable_router` 返回值直接传给 `strcmp`。
-  5. trace 在 `0x437840` 前后结束并收到 `SIGSEGV si_addr=NULL`。
+漏洞名称：
+Netgear XWN5001 0x437540 空指针解引用漏洞
 
-## 原始请求还原
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-- 方法: `POST`
-- URL: `/apply.cgi?debuginfo.htm`
-- handler 来源: `packet_1.request.prefix` 与 `packet_1.request.handler_name`
-- 关键 body 字段:
-  - `submit_flag=wlan_adv`
-  - `wl_enable_router=1`
-  - 缺失 `wla_enable_router`
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?debuginfo.htm发送构造的POST请求，在submit_flag=wlan_adv的处理路径中省略wl_enable_router参数，触发后续字符串比较流程对空指针进行使用，最终导致uhttpd进程崩溃，从而造成拒绝服务。
 
-这里要区分清楚：`body` 中没有 `wla_enable_router`，这正是崩溃原因；它不是 URL。
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在config_wladv处理分支内，程序会读取wl_enable_router参数，并在0x4377b4处直接调用strcmp与固定字符串进行比较。由于这里没有对cgi_value的返回值做空指针检查，当请求中缺少wl_enable_router时，程序会执行strcmp(NULL, "0")并触发SIGSEGV。
 
-## 入口二进制与 Trace 映射
+攻击者可以远程发起攻击，通过向/apply.cgi?debuginfo.htm发送包含submit_flag=wlan_adv且缺少wl_enable_router参数的POST请求触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `main = 0x4047d4`
-- 命中的入口 trace: `trace/usr_sbin_uhttpd.txt`
-- 关键执行片段:
-  - `pc=0x4375e8`
-  - `pc=0x4376dc`
-  - `pc=0x4377a4`
-  - `pc=0x4377bc`
-  - `pc=0x4377dc`
-  - `pc=0x437800`
-  - `pc=0x437838`
-  - `pc=0x437840`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+漏洞研究环境：
 
-## 关键反汇编与数据流
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-`0x4376dc` 起的 `config_wladv` 相关逻辑中，关键指令如下：
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-- `0x437778`: `cgi_value("wl_enable_router", ...)`
-- `0x437798`: `cgi_value("wla_enable_router", ...)`
-- `0x4377a0`: `move s1, v0`
-- `0x4377ac`: `move a0, s1`
-- `0x4377b0`: 准备比较常量
-- `0x4377b4`: `strcmp(s1, const)`
+目标配置情况：
 
-字符串表能对齐字段名：
+没有进行特殊配置，默认仿真环境启动。
 
-- `0x5e000`: `wl_enable_router`
-- `0x5e014`: `wla_enable_router`
-- `0x5df78`: `ap_netbiosname`
+具体验证过程：
 
-本样本 body 只提供了 `wl_enable_router`，没有提供 `wla_enable_router`，因此 `cgi_value("wla_enable_router")` 返回 `NULL`。函数没有做任何判空，直接把该指针交给 `strcmp`，于是触发空指针崩溃。
+第一步。攻击者向/apply.cgi?debuginfo.htm发送POST请求，并将submit_flag设置为wlan_adv，使程序进入无线高级配置处理分支。程序在该分支中尝试读取wl_enable_router参数，但当前请求没有提供该字段，因此返回值为空。程序在0x4377b0处继续将该空指针传入strcmp进行比较，最终触发空指针解引用并导致uhttpd进程崩溃。
+![alt text](image.png)
+相关问题代码：
 
-## 崩溃证据
-
-控制台日志：
-
-- `=================config_wladv Enter===========`
-- `ap_netbiosname=Unknown`
-- `=================STEP 1===========`
-- `=================STEP 2===========`
-- `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-
-trace 没有出现子进程或外部命令，崩溃完全发生在 `uhttpd` 内部。`si_addr=NULL` 与 `strcmp(NULL, ...)` 完全一致，也和缺失字段的反汇编证据一致。
-
-## 结论
-
-这是确认漏洞：
-
-- source 明确：`cgi_value("wla_enable_router")`
-- sink 明确：`strcmp@0x4377b4`
-- 数据流明确：缺失字段 -> `NULL` 指针 -> `strcmp`
-- trace/console/反汇编三者闭环一致
-
-因此该 case 应判定为 `确认漏洞`，根因为 `config_wladv` 对缺失的 `wla_enable_router` 参数没有做空指针校验。
+0x437540

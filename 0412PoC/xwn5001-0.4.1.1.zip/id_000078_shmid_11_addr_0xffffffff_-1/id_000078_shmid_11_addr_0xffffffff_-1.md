@@ -1,68 +1,31 @@
-## 摘要
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` `fcn.00437e0c @ 0x437e0c` `strcmp(s1, const) @ 0x437ec0`
-- Source位置: `/usr/sbin/uhttpd` `fcn.00437e0c @ 0x437e0c` `cgi_value("LED_ON_OFF") @ 0x437e80`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 内存破坏
-- 一句话根因: `submit_flag=wlan_adv_plc` 进入 PLC 高级配置分支后直接读取 `LED_ON_OFF`，字段缺失时 `cgi_value` 返回 `NULL`，代码随后无判空执行 `strcmp(NULL, ...)` 导致崩溃。
-- 数据包字段 -> 变量赋值:
-  - `packet_1.request.prefix + packet_1.request.handler_name -> POST /apply.cgi`
-  - `packet_1.body.submit_flag=wlan_adv_plc -> cgi_setobject @ 0x40b95c -> fcn.00437e0c`
-  - `packet_1.body.LED_ON_OFF` 缺失 -> `cgi_value("LED_ON_OFF") @ 0x437e80` 返回 `NULL` -> `s1`
-  - `s1(NULL) -> move a0, s1 @ 0x437ebc -> strcmp(a0, const) @ 0x437ec0`
-- 执行顺序:
-  1. `/usr/sbin/uhttpd` 接收 `POST /apply.cgi`。
-  2. `cgi_setobject` 读取 `submit_flag=wlan_adv_plc`，进入 `config_wladv_plc` 对应分支 `0x437e0c`。
-  3. 分支打印进入日志，然后调用 `cgi_value("LED_ON_OFF")`。
-  4. 由于数据包中没有 `LED_ON_OFF`，返回值为空。
-  5. 代码继续在 `0x437ebc-0x437ec0` 调用 `strcmp` 比较该空指针，trace 立即以 `SIGSEGV si_addr=NULL` 结束。
+漏洞名称：
+Netgear XWN5001 0x437e0c 空指针解引用漏洞
 
-## 原始请求
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-- 方法: `POST`
-- URL: `/apply.cgi`
-- URL 来源: `VulPacket.json` 的 `packet_1.request.prefix` 与 `packet_1.request.handler_name`
-- 说明: `wlan_adv_plc` 来自 body 的 `submit_flag`，是 handler 选择条件，不是 URL
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi?c发送构造的POST请求，在submit_flag=wlan_adv_plc的处理路径中省略LED_ON_OFF参数，触发后续字符串比较流程对空指针进行使用，最终导致uhttpd进程崩溃，从而造成拒绝服务。
 
-## 入口二进制与 Trace 映射
+该漏洞位于二进制文件/usr/sbin/uhttpd中，在PLC高级配置处理分支内，程序会读取LED_ON_OFF参数，并在后续逻辑中直接将其传给strcmp进行比较。由于缺少空指针检查，当该字段不存在时，程序在0x437ec0处对空指针执行字符串比较并触发SIGSEGV。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `trace_summary.json` 显示 `main = 0x4047d4`
-- 命中 trace: `trace/usr_sbin_uhttpd.txt`
-- 关键 trace:
-  - `pc=0x40b95c`
-  - `pc=0x437e0c`
-  - `pc=0x437e54`
-  - `pc=0x437e6c`
-  - `pc=0x437e88`
-  - `pc=0x437ea0`
-  - `pc=0x437eb4`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=NULL} ---`
+攻击者可以远程发起攻击，通过向/apply.cgi?c发送包含submit_flag=wlan_adv_plc且缺少LED_ON_OFF参数的POST请求触发漏洞。
 
-## 关键代码证据
+漏洞研究环境：
 
-- 字符串表:
-  - `wlan_adv_plc`
-  - `LED_ON_OFF`
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-- 反汇编关键点:
-  - `0x437e7c`: 组装 `LED_ON_OFF` 参数名
-  - `0x437e80`: `jal sym.cgi_value`
-  - `0x437e90`: `move s1, v0`
-  - `0x437e94`: `nvram_get(...)`
-  - `0x437ea4`: 若 `nvram_get` 为 `NULL`，用常量默认值填 `s0`
-  - `0x437ebc`: `move a0, s1`
-  - `0x437ec0`: `jalr t9 ; strcmp`
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-## 为什么这是确认漏洞
+目标配置情况：
 
-这里的 source、变量和 sink 已经闭环:
+没有进行特殊配置，默认仿真环境启动。
 
-- source: `cgi_value("LED_ON_OFF")`
-- variable: `s1`
-- sink: `strcmp(s1, const)`
-- trace: 命中 `0x437e0c -> 0x437eb4 -> SIGSEGV NULL`
-- console: 明确打印 `LED_ON_OFF=Unknown`
+具体验证过程：
 
-因此这不是环境脚本失败，也不是普通噪声，而是 `uhttpd` 内部真实的未判空缺陷。
+第一步。攻击者向/apply.cgi?c发送POST请求，并将submit_flag设置为wlan_adv_plc，使程序进入PLC高级配置处理分支sub_437e0c。程序在该分支中尝试读取LED_ON_OFF参数，但当前请求没有提供该字段，因此返回值为空。程序在0x437ec0处继续将该空指针传入strcmp进行比较，最终触发空指针解引用并导致uhttpd进程崩溃。
+![alt text](image.png)
+相关问题代码：
+
+0x437e0c

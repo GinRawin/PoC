@@ -1,6 +1,6 @@
 POST /apply.cgi?Change_pvc_num HTTP/1.1
 HOST: 192.168.0.50
 Cookie: uid=xhyxhy
-Content-Length: 246
+Content-Length: 29
 
-submit_flag=security_question&hidden_lang_avi=1&New_Language=22222222222222222222222222222222&lang_in_flash=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&answer2=1
+submit_flag=security_question

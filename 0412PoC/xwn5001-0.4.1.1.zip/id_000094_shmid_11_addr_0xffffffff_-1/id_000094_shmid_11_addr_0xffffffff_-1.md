@@ -1,93 +1,33 @@
-## 摘要
+http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
-- 判定: 确认漏洞
-- Sink位置: `/usr/sbin/uhttpd` 函数 `fcn.00430780@0x430780` 内 `strcpy@0x4308a0`
-- Source位置: `/usr/sbin/uhttpd` 函数 `0x43138c` 内 `cgi_value("plc_qos_mac_addr")@0x4313e8`
-- 漏洞二进制: `/usr/sbin/uhttpd`
-- 漏洞类型: 内存破坏
-- 一句话根因: `plc_qos_mac_add` 把用户提供的长 `plc_qos_mac_addr` 写入 PLC 规则条目后，在 `fcn.00430780` 中再次取出第二个 token 并用 `strcpy` 复制到 `sp+0x70`，导致 256 字节字符串覆盖仅 68 字节外的返回地址附近栈区并崩溃。
-- 数据包字段 -> 变量赋值:
-  - `request.prefix="/"` + `request.handler_name="apply.cgi?upgrade_check_free.cgi"` -> 原始请求 URL `/apply.cgi?upgrade_check_free.cgi`
-  - `body.submit_flag="plc_qos_mac_add"` -> 进入 PLC QoS MAC add 处理函数 `0x43138c`
-  - `body.plc_qos_mac_addr` -> `cgi_value` 返回 `v0` -> `sprintf("%s %s")` 的第二个参数 -> `add_items("plc_qos_mac", entry)` 写入规则条目
-  - 规则条目中的第二个 token -> `get_string_segment(..., 1, " ")` 返回值 -> `strcpy(sp+0x70, token)` -> 覆盖 `ra@sp+0xb4`
-- 执行顺序:
-  1. `/usr/sbin/uhttpd` 接收 `POST /apply.cgi?upgrade_check_free.cgi`，`submit_flag=plc_qos_mac_add` 命中 `0x43138c`。
-  2. `0x4313e8` 读取 `plc_qos_mac_addr`，`0x431410` 用 `"%s %s"` 组装条目并经 `add_items/plc_rules_file_update` 保存。
-  3. `plc_rules_file_update@0x430904` 调用 `fcn.00430780@0x430780` 重新解析该条目。
-  4. `0x43088c` 取出第二个字段，`0x4308a0` 执行 `strcpy(sp+0x70, token)`。
-  5. trace 走到 `0x4308a8` 后立即 `SIGSEGV`，`si_addr=0x3232327a`，与输入中的攻击者字节模式一致。
+漏洞名称：
+Netgear XWN5001 0x430780 缓冲区溢出漏洞
 
-## 原始请求还原
+Netgear XWN5001 0.4.1.1是netgear公司旗下的一款网络设备固件，受影响产品为XWN5001，受影响版本为0.4.1.1。
 
-- 方法: `POST`
-- URL: `/apply.cgi?upgrade_check_free.cgi`
-- handler 来源: `packet_1.request.prefix` 与 `packet_1.request.handler_name`
-- 与漏洞直接相关的 body 字段:
-  - `submit_flag=plc_qos_mac_add`
-  - `qos_mac_priority=0`
-  - `plc_qos_mac_addr=<256字节 '2...'>`
+Netgear XWN5001 0.4.1.1的/usr/sbin/uhttpd二进制文件中存在一个缓冲区溢出漏洞。远程攻击者可以通过向对应的/apply.cgi?c接口发送构造的POST请求，在submit_flag=plc_qos_port_add的处理路径中提供超长qos_port_priority和/或plc_qos_port参数。程序在sub_431070中读取qos_port_priority和plc_qos_port，将两者拼接后写入NVRAM中的plc_qos_port%d配置项，随后在规则文件更新过程中进入sub_430780，对这些配置项执行strcpy复制，最终触发缓冲区溢出并导致uhttpd进程崩溃，从而造成拒绝服务。
 
-`body` 里的 `/tmp/rules.txt` 等键只是参数名，不是原始请求 URL。
+该漏洞位于二进制文件/usr/sbin/uhttpd中。在PLC QoS端口新增处理函数sub_431070内，程序先通过nvram_get("plc_qos_port_select")确定当前端口索引，并拼接出配置键名plc_qos_port%d。随后函数分别通过cgi_value("qos_port_priority", a1, a2)与cgi_value("plc_qos_port", a1, a2)获取用户可控数据，使用sprintf(v8, "%s %s", v6, result)将两者拼接后调用nvram_set(v7, v8)写入对应NVRAM项，并立即执行plc_rules_file_update()。在后续规则重建函数sub_430780中，程序会循环读取plc_qos_port1、plc_qos_port2等配置项，并调用strcpy将内容复制到局部缓冲区。由于这里没有进行长度检查，只要拼接后的配置值超出目标缓冲区容量，最终就会导致缓冲区溢出。
 
-## 入口二进制与 Trace 映射
+攻击者可以远程发起攻击，通过向对应的/apply.cgi?c接口发送包含submit_flag=plc_qos_port_add以及超长qos_port_priority和/或plc_qos_port参数的POST请求触发漏洞。
 
-- 入口二进制: `/usr/sbin/uhttpd`
-- `main = 0x4047d4`
-- 命中的入口 trace: `trace/usr_sbin_uhttpd.txt`
-- 关键执行链:
-  - `pc=0x43138c`
-  - `pc=0x431430`
-  - `pc=0x430904`
-  - `pc=0x43084c`
-  - `pc=0x430894`
-  - `pc=0x4308a8`
-  - `--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x3232327a} ---`
+漏洞研究环境：
 
-## 关键数据流与地址
+通过模拟仿真进行验证。当前附件中的环境是已经patch了认证环节之后的，未patch的环境可以通过上述下载链接获取对应固件。
 
-PLC QoS MAC add 处理函数 `0x43138c` 与 `id:000092` 相同，先读取两个 CGI 字段并创建条目:
+通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了rehost的镜像，链接为https://github.com/GinRawin/PoC/blob/main/0412PoC/xwn5001-0.4.1.1.zip/xwn5001-0.4.1.1.tar.gz，启动的命令为进入到dockerfile目录下，然后docker-compose build, docker-compose up。
 
-- `0x4313c4`: `cgi_value("qos_mac_priority", ...)`
-- `0x4313e8`: `cgi_value("plc_qos_mac_addr", ...)`
-- `0x431410`: `sprintf(sp+0x18, "%s %s", qos_mac_priority, plc_qos_mac_addr)`
-- `0x431428`: `add_items("plc_qos_mac", sp+0x18)`
-- `0x431438`: `plc_rules_file_update(...)`
+目标配置情况：
 
-本样本里 `qos_mac_priority` 很短，前面的 `sprintf` 总长度只有 `259` 字节，没有越过 `0x43138c` 当前栈帧的 `ra@sp+0x124`。真正触发崩溃的是后续解析链中的第二个无界复制:
+没有进行特殊配置，默认仿真环境启动。
 
-- `fcn.00430780@0x430780` 的本地缓冲 `s2 = sp+0x70`
-- 保存的 `ra` 在 `sp+0xb4`
-- `sp+0x70` 到 `ra` 仅 `0x44 = 68` 字节
-- `0x43088c`: `get_string_segment(s1, 1, " ")` 取回第二个 token，即长 `plc_qos_mac_addr`
-- `0x4308a0`: `strcpy(sp+0x70, token)`
+具体验证过程：
 
-因为 `len(plc_qos_mac_addr) = 256`，这次 `strcpy` 必然覆盖 `ra` 及其后的保存寄存器。
+第一步。攻击者向对应的/apply.cgi?c接口发送POST请求，并将submit_flag设置为plc_qos_port_add，使程序进入PLC QoS端口新增处理函数sub_431070。程序先读取plc_qos_port_select确定配置索引，再分别获取qos_port_priority与plc_qos_port，并将两者用空格拼接后写入plc_qos_port%d对应的NVRAM项。
+![alt text](image.png)
+第二步。程序随后调用plc_rules_file_update，在规则更新过程中进入sub_430780，按顺序读取plc_qos_port1等配置项，并调用strcpy将其复制到局部缓冲区。由于复制数据长度超出缓冲区容量，局部缓冲区边界被破坏，栈上的关键数据被覆盖，程序最终在后续执行过程中触发崩溃。
+![alt text](image-1.png)
+相关问题代码：
 
-## 崩溃证据
-
-trace 尾部严格对应 `strcpy` 之后的崩溃:
-
-1. `0x43084c -> 0x430750`：第一次 `get_string_segment`
-2. `0x430854..0x430870`：中间处理
-3. `0x430894`：准备把第二个 token 复制到 `sp+0x70`
-4. `0x4308a8`：`strcpy` 返回后的下一基本块
-5. 立即出现 `SIGSEGV si_addr=0x3232327a`
-
-控制台同样显示:
-
-- `plc_qos_mac1=Unknown`
-- `[GreenHouseQEMU] SIGSEGV CAUGHT!`
-
-`0x3232327a` 对应用户输入中的 `'2'/'z'` 模式，不符合环境随机崩溃。
-
-## 结论
-
-这是确认漏洞，不是误报:
-
-- source 明确: `plc_qos_mac_addr` 由 `cgi_value` 直接读取
-- sink 明确: `fcn.00430780` 中的 `strcpy(sp+0x70, token)` 是真实危险写入
-- 数据流闭环: `body.plc_qos_mac_addr -> PLC 规则条目 -> get_string_segment -> strcpy`
-- trace/console 与崩溃地址都和该链一致
-
-因此该 case 应判定为 `确认漏洞`，根因为 PLC QoS MAC 规则解析代码对用户可控 token 使用了无界 `strcpy`。
+0x430780

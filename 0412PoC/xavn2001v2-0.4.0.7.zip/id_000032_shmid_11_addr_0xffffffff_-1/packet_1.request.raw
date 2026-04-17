@@ -2,6 +2,6 @@ POST /apply.cgi?wlacl_edit HTTP/1.1
 HOST: 192.168.0.50
 Content-Type: xml/text
 Cookie: uid=xhyxhy
-Content-Length: 324
+Content-Length: 21
 
-test=test&show_traffic=pls_wait.html&/tmp/rules.txt=2222wzq2222222222222222222222222&/tmp/upd_firm_info=2222222222222222222222222222222222222222222222222222222222222222222222wzq2222222222222222222222222222222222222222222222222222222&GUI_Region2=2222wzq2&GUI_Region=22222222&submit_flag=wlacl_del&device=22222222&adr=22222222
+submit_flag=wlacl_del
