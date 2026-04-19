@@ -1,7 +1,0 @@
-POST /system_time.cgi* HTTP/1.1
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
-User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
-Content-Type: application/json
-Content-Length: 67
-
-html_response_return_page='wzq'&date=wzqwzqwzq&er_ip_08_B=wzqwzqwzq

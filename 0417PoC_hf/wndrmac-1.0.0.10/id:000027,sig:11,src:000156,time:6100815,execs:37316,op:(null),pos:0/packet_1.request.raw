@@ -1,9 +1,0 @@
-POST /apply.cgi?/USB_Folder_edit.htm?editFolderID= HTTP/1.1
-Accept: 0
-User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
-Connection: 
-Content-Type: application/json
-Host: ipv6_dhcp
-Content-Length: 326
-
-wan_pppoe_intranet_ip=wzqwzqwzq&submit_flag=USB_advanced&%20timestamp=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

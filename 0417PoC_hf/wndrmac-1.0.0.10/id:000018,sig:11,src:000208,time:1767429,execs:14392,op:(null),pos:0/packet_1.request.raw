@@ -1,6 +1,0 @@
-POST /apply.cgi?ccaaaxhyaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaxhyaaaaaaaaaaaaaaaaaaaaaxhywaaaaaaaa.js HTTP/1.1
-Host: 0.0.0.0
-Content-Type: application/json
-Content-Length: 356
-
-wan_ether_dns1=\wzq&wan_ether_dns2=\wzq&%20timestamp=`$(wzq)`&submit_flag=qos_delmac&upgrade_yes_no=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

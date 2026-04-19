@@ -1,23 +1,22 @@
-https://www.trendnet.com/langen/support/support-detail.asp?prod=150_TEW-652BRP
+https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/tew-652brp-1.10.29/tew-652brp-1.10.29.tar.gz
 
 漏洞名称：
-Trendnet TEW-652BRP 0x407d98 空指针解引用漏洞
+Trendnet TEW-652BRP 1.10.29 0x407d40 空指针解引用漏洞
 
-Trendnet TEW-652BRP是Trendnet公司旗下的一款路由器固件，受影响固件名称为TEW-652BRP，受影响版本为1.10.29。
+Trendnet TEW-652BRP 1.10.29 是 Trendnet 公司旗下的一款网络设备固件，受影响产品为 TEW-652BRP，受影响版本为 1.10.29。
 
-tew-652brp-1.10.29
-Trendnet TEW-652BRP的/sbin/httpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/vct_lan_01发送构造的HTTP请求，使程序在处理该路径时对请求URL后缀执行错误判断，最终在后缀比较流程中解引用非法地址并导致httpd进程崩溃。
+Trendnet TEW-652BRP 1.10.29 的 `/sbin/httpd` 二进制文件中存在一个 `空指针解引用` 漏洞。远程攻击者可以通过发送构造的 HTTP 请求触发该问题。httpd_main 在处理 vct_lan_01 路径时先对路径调用 strchr(s2, '.')，未检查返回值是否为 NULL，随后直接把 v0 + 1 作为后缀指针传给 strncmp，当请求路径没有 . 扩展名时触发崩溃。
 
-该漏洞位于二进制文件/sbin/httpd中，在httpd_main函数针对vct_lan_01路径的处理分支内，程序会在0x407d7c处调用strchr查找路径中的'.'字符，并在0x407d98处继续调用strncmp比较扩展名。由于传入的路径字符串不包含'.'时，strchr返回NULL，但后续代码未进行判空检查，直接将返回值加1后作为strncmp参数使用，因此会触发对非法地址0x1的访问并造成SIGSEGV。
+该漏洞位于二进制文件 `/sbin/httpd` 中。程序在 `/sbin/httpd parse_http_url_request@0x408a28 0x408a28` 处对攻击者可控输入完成读取、解析或传递，并最终在 `/sbin/httpd httpd_main@0x407d40 0x407d40` 处进入危险操作，最终导致进程崩溃并造成拒绝服务。
 
-攻击者可以远程发起攻击，通过向/vct_lan_01发送不带文件扩展名的请求来触发漏洞。当前样本中的原始请求为POST /vct_lan_01 HTTP/1.1，请求体为空，但已经足以使程序进入存在缺陷的处理路径。
+攻击者可以远程发起攻击，通过向目标设备发送恶意请求触发漏洞。
 
 漏洞研究环境：
 
-通过模拟仿真进行验证。当前固件目录中保留了对应样本的分析材料、原始请求和发送脚本，可用于复现该问题。
+通过模拟仿真进行验证。当前样本目录中提供了对应的请求包与发送脚本 send.py，可用于复现该问题。
 
-通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
-当前固件目录下包含对应的rehost压缩包tew-652brp-1.10.29.tar.gz，可结合样本目录中的send.py和packet_1.request.raw进行验证。
+通过 greenhouse 进行仿真，greenhouse 链接为 https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为 https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了 rehost 的镜像，链接为 https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/tew-652brp-1.10.29/tew-652brp-1.10.29.tar.gz，启动的命令为进入到 dockerfile 目录下，然后 `docker-compose build`, `docker-compose up`。
 
 目标配置情况：
 
@@ -25,11 +24,12 @@ Trendnet TEW-652BRP的/sbin/httpd二进制文件中存在一个空指针解引�
 
 具体验证过程：
 
-第一步。攻击者向/vct_lan_01发送HTTP请求，使/sbin/httpd在parse_http_url_request中解析出路径字符串，并在httpd_main中命中vct_lan_01对应的处理分支。
+第一步。parse_http_url_request@0x408a28 从 HTTP 请求行中解析出 URL/path，并在 httpd_main@0x4075a0 保存到 s2。
 
-第二步。程序在0x407d7c处对路径字符串调用strchr查找'.'字符。由于当前请求路径为/vct_lan_01，不包含扩展名，strchr返回NULL。随后代码仍在0x407d88处将该返回值加1，并在0x407d98处作为strncmp的第一个参数使用，最终访问地址0x1并触发SIGSEGV。现有trace也显示崩溃点位于该分支附近，si_addr=0x00000001，与空指针解引用结论一致。
-![alt text](image.png)
+第二步。httpd_main@0x407a70 用常量 vct_lan_01 匹配 s2，命中后进入 vct_lan_01 处理路径。
+
+第三步。httpd_main@0x407d7c 调用 strchr(s2, '.') 返回 NULL，0x407d88 构造出非法指针 0x1，0x407d98 将其传给 strncmp，最终导致 SIGSEGV。
 
 相关问题代码：
 
-0x407d98
+0x407d40

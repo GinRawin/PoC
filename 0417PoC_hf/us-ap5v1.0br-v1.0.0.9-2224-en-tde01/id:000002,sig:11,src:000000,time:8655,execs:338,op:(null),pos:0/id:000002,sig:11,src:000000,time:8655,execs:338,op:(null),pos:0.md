@@ -1,18 +1,22 @@
+https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/us-ap5v1.0br-v1.0.0.9-2224-en-tde01/us-ap5v1.0br-v1.0.0.9-2224-en-tde01.tar.gz
+
 漏洞名称：
-Tenda AP5 /cgi-bin/upgrade 接口上传解析栈缓冲区溢出漏洞
+Tenda AP5 1.0.0.9-2224-EN-TDE01 0x433e38 栈缓冲区溢出漏洞
 
-Tenda AP5是Tenda公司旗下的一款无线接入点设备，受影响固件名称为us-ap5v1.0br-v1.0.0.9-2224-en-tde01，受影响版本为V1.0.0.9(2224)。
+Tenda AP5 1.0.0.9-2224-EN-TDE01 是 Tenda 公司旗下的一款网络设备固件，受影响产品为 AP5，受影响版本为 1.0.0.9-2224-EN-TDE01。
 
-us-ap5v1.0br-v1.0.0.9-2224-en-tde01
-Tenda AP5的`/bin/httpd`二进制文件中存在一个栈缓冲区溢出漏洞。远程攻击者可以通过向`/cgi-bin/upgrade`发送构造的POST请求触发上传解析流程，使程序在`webCgiGetUploadFile()`中将非multipart格式的JSON请求体逐字节写入固定长度的栈缓冲区，且写入过程缺少边界检查，最终越界覆盖上层调用栈中的关键局部变量，并在后续解引用被污染指针时导致`httpd`进程崩溃，造成拒绝服务。
+Tenda AP5 1.0.0.9-2224-EN-TDE01 的 `bin/httpd` 二进制文件中存在一个 `栈缓冲区溢出` 漏洞。远程攻击者可以通过发送构造的 HTTP 请求触发该问题。upgrade() 在处理 POST /cgi-bin/upgrade 时调用 webCgiGetUploadFile() 解析上传内容，但该函数把非 multipart 的单行 JSON 请求体逐字节写入仅 83 字节的栈缓冲区 sp+0x845，无边界检查，越界后覆盖了调用者 upgrade() 栈里的 mmap 返回指针，最终在 0x43410c 解引用被污染指针 0x72657375("user") 崩溃。
 
-该漏洞位于二进制文件`/bin/httpd`中，关键调用链可概括为`webs_Tenda_CGI_BIN_Handler -> upgrade -> webCgiGetUploadFile`。其中`webs_Tenda_CGI_BIN_Handler()`根据请求路径将请求分派到`upgrade()`；`upgrade()`创建并映射`/var/image`后，将映射地址指针传入`webCgiGetUploadFile()`；后者在处理当前样本对应的JSON请求体时，于`0x433e38`附近执行逐字节复制，将可控数据从读取缓冲区写入位于`sp+0x845`的栈缓冲区。由于该缓冲区到栈帧末尾仅剩约83字节，而样本请求体长度为259字节，写入会跨越当前函数栈帧并覆写调用者`upgrade()`中的局部变量`mapped_addr`。在后续执行到`0x43410c`附近时，程序对该已被污染的指针进行解引用，最终触发`SIGSEGV`。从崩溃地址`0x72657375`可以看出，该值与请求体中可控字符串`"user"`的ASCII字节一致，说明崩溃由请求内容直接影响。
+该漏洞位于二进制文件 `bin/httpd` 中。程序在 `bin/httpd webCgiGetUploadFile 0x433d10 0x433d10` 处对攻击者可控输入完成读取、解析或传递，并最终在 `bin/httpd webCgiGetUploadFile 0x433e38 0x433e38` 处进入危险操作，最终导致栈破坏并触发进程崩溃。
 
-攻击者可以远程发起攻击，通过向`/cgi-bin/upgrade`发送带有`Content-Type: application/json`和超长JSON请求体的POST请求来触发漏洞。
+攻击者可以远程发起攻击，通过向目标设备发送恶意请求触发漏洞。
 
 漏洞研究环境：
 
-通过模拟仿真进行验证。当前样本目录中已提供触发请求`packet_1.request.raw`以及发送脚本`send.py`，可直接用于向仿真中的目标`httpd`发送原始HTTP报文。
+通过模拟仿真进行验证。当前样本目录中提供了对应的请求包与发送脚本 send.py，可用于复现该问题。
+
+通过 greenhouse 进行仿真，greenhouse 链接为 https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为 https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了 rehost 的镜像，链接为 https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/us-ap5v1.0br-v1.0.0.9-2224-en-tde01/us-ap5v1.0br-v1.0.0.9-2224-en-tde01.tar.gz，启动的命令为进入到 dockerfile 目录下，然后 `docker-compose build`, `docker-compose up`。
 
 目标配置情况：
 
@@ -20,25 +24,12 @@ Tenda AP5的`/bin/httpd`二进制文件中存在一个栈缓冲区溢出漏洞�
 
 具体验证过程：
 
-第一步。攻击者向`/cgi-bin/upgrade`发送POST请求，请求头中指定`Content-Type: application/json`和`Content-Length: 259`，请求体为单行JSON数据。该请求会命中`/cgi-bin/upgrade`处理路径并进入`webs_Tenda_CGI_BIN_Handler()`。
-![alt text](image.png)
+第一步。webs_Tenda_CGI_BIN_Handler() 根据 URL 命中 upgrade()。
 
-第二步。`webs_Tenda_CGI_BIN_Handler()`根据URI将请求分派给`upgrade()`。`upgrade()`随后创建`/var/image`，按请求体长度扩展文件并执行`mmap`，将返回的映射地址保存在局部变量`mapped_addr`中，然后调用`webCgiGetUploadFile(req, &mapped_addr)`继续处理上传数据。
-![alt text](image-1.png)
+第二步。upgrade() 创建 /var/image，按 Content-Length 扩展文件并 mmap，然后把 &mapped_addr 传给 webCgiGetUploadFile()。
 
-第三步。进入`webCgiGetUploadFile()`后，函数先在`0x433d10`附近将请求体读入自身栈上的输入缓冲区`sp+0x44`。随后函数并未验证当前数据是否为合法multipart上传内容，而是在`0x433e1c-0x433e38`附近进入逐字节复制逻辑，将输入缓冲区中的内容写入位于`sp+0x845`的目标缓冲区。由于这里没有对写入长度做上界限制，来自请求体的259字节数据会超过该栈缓冲区实际可用空间，并越界覆盖到上层调用者`upgrade()`的栈槽。
-![alt text](image-2.png)
-![alt text](image-3.png)
-
-第四步。越界写发生后，`upgrade()`栈中的`mapped_addr`被请求体中的可控字节污染。结合当前样本，崩溃时的`si_addr=0x72657375`对应ASCII字符串`"user"`，与请求体中`sys.username`、`sys.baseusername`、`sys.userpass`等字段包含的文本相吻合，说明该指针值来自攻击者输入。随后程序在`0x43410c`附近继续通过该指针取值并发生非法访问，最终导致`httpd`进程崩溃。
-![alt text](image-4.png)
-
-第五步。由于崩溃发生在HTTP请求处理线程中，攻击者可通过反复发送该类请求稳定触发`httpd`异常退出，从而形成拒绝服务影响。依据当前样本已有分析材料，可以确认崩溃来源于真实的越界写和后续受控指针解引用，而非单纯仿真噪声或偶发错误。
+第三步。webCgiGetUploadFile() 在 0x433d10 读入请求体，在 0x433e38 无界复制导致栈溢出，随后在 0x43410c 解引用被改写的 mapped_addr 并因 0x72657375 崩溃。
 
 相关问题代码：
 
-`webs_Tenda_CGI_BIN_Handler`
-
-`upgrade`
-
-`webCgiGetUploadFile`
+0x433e38

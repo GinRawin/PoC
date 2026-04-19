@@ -1,8 +1,0 @@
-POST /apply.cgi?wan_l2tp_dns_assign_items HTTP/1.1
-Connection: xhyxhyxhy
-Accept: 64
-Host: 'xhy
-Content-Type: application/json
-Content-Length: 82
-
-wan=gateway&_l2tp_dns_assign=",wzq&submit_flag=plc_dev_config&%20timestamp=gateway

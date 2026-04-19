@@ -1,15 +1,15 @@
 http://www.downloads.netgear.com/files/GDC/XWN5001/XWN5001-V0.4.1.1.zip
 
 漏洞名称：
-Netgear XWN5001 0.4.1.1 wlan_g1_a1 空指针解引用漏洞
+Netgear XWN5001 0.4.1.1 0x438e64 空指针解引用漏洞
 
 Netgear XWN5001 0.4.1.1 是 Netgear 公司旗下的一款网络设备固件，受影响产品为 XWN5001，受影响版本为 0.4.1.1。
 
-Netgear XWN5001 0.4.1.1 的 `/usr/sbin/uhttpd` 二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向 `/apply.cgi` 发送构造的 POST 请求触发该问题。程序在根据 `submit_flag=wlan_g1_a1` 进入 guest wireless 配置处理逻辑后，会读取字段 `wlg_guest_endis_wireless_isolation`，但当该字段缺失时，没有检查 `cgi_value` 的返回结果，而是直接将 `NULL` 作为参数传给 `nvram_set`，最终导致 `uhttpd` 进程崩溃。
+Netgear XWN5001 0.4.1.1 的 `/usr/sbin/uhttpd` 二进制文件中存在一个 `空指针解引用` 漏洞。远程攻击者可以通过发送构造的 HTTP 请求触发该问题。wlan_g1_a1 处理函数从 CGI 参数中读取 wlg_guest_endis_wireless_isolation 后，未检查返回值是否为 NULL，就直接把它作为第二实参传给 nvram_set，导致空指针解引用崩溃。
 
-该漏洞位于二进制文件 `/usr/sbin/uhttpd` 中。请求首先通过 `cgi_setobject` 读取 `submit_flag` 并命中 `wlan_g1_a1` 对应处理函数。随后在 `0x439058` 处调用 `cgi_value("wlg_guest_endis_wireless_isolation", ...)`。由于本样本请求体中缺少该字段，返回值为 `NULL`，并在 `0x439078` 被直接放入 `a1`。紧接着程序在 `0x43907c` 调用 `nvram_set("endis_wlg_guest_wireless_isolation", NULL)`，造成空指针解引用。
+该漏洞位于二进制文件 `/usr/sbin/uhttpd` 中。程序在 `uhttpd 0x438e64 0x439058 (cgi_value("wlg_guest_endis_wireless_isolation", req, env)) 0x438e64` 处对攻击者可控输入完成读取、解析或传递，并最终在 `uhttpd 0x438e64 0x43907c (jalr -> nvram_set("endis_wlg_guest_wireless_isolation", v0)) 0x438e64` 处进入危险操作，最终导致进程崩溃并造成拒绝服务。
 
-攻击者可以远程发起攻击，通过向 `/apply.cgi` 提交包含 `submit_flag=wlan_g1_a1`、但省略 `wlg_guest_endis_wireless_isolation` 字段的 POST 请求触发漏洞。本样本的原始请求正满足这一条件。
+攻击者可以远程发起攻击，通过向目标设备发送恶意请求触发漏洞。
 
 漏洞研究环境：
 
@@ -24,13 +24,12 @@ Netgear XWN5001 0.4.1.1 的 `/usr/sbin/uhttpd` 二进制文件中存在一个空
 
 具体验证过程：
 
-第一步。攻击者向 `/apply.cgi` 发送 POST 请求，请求体中设置 `submit_flag=wlan_g1_a1`，使程序进入 guest wireless 配置处理流程。虽然该请求包含其他参数和超长字段，但真正决定本次崩溃的数据项是缺失的 `wlg_guest_endis_wireless_isolation`。
-![alt text](image-1.png)
-![alt text](image-2.png)
+第一步。POST /apply.cgi? 请求进入 uhttpd，cgi_setobject(0x40b95c) 通过 cgi_value("submit_flag", ...) 读到 body.submit_flag=wlan_g1_a1。
 
-第二步。程序在处理函数内调用 `cgi_value("wlg_guest_endis_wireless_isolation", ...)`，由于参数不存在，返回值为 `NULL`。该空指针随后直接作为第二个参数传给 `nvram_set`，在后续处理过程中被解引用，最终引发 `SIGSEGV` 并导致 `uhttpd` 进程崩溃。
-![alt text](image.png)
+第二步。cgi_setobject 在对象表 0x4718b0 命中表项 wlan_g1_a1 -> 0x439120，随后调用包装函数 0x439120，再进入真实处理函数 0x438e64。
+
+第三步。0x438e64 在 0x439058 读取 wlg_guest_endis_wireless_isolation，由于该字段缺失返回 NULL；0x43907c 紧接着调用 nvram_set("endis_wlg_guest_wireless_isolation", NULL)，随后发生 SIGSEGV，si_addr=NULL。
 
 相关问题代码：
 
-0x43907c
+0x438e64

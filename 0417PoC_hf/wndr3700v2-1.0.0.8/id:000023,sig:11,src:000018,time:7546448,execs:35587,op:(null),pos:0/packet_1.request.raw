@@ -1,8 +1,0 @@
-POST /apply.cgi?USB_disk_rm.htm?dev_name=usb_approved_del HTTP/1.1
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
-User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
-Host: 108
-Content-Type: application/json
-Content-Length: 70
-
-ava_devname=sd&upgrade_yes_no=EXT2&submit_flag=block_sites&filename=sd

@@ -1,20 +1,22 @@
+https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/xavn2001v2-0.4.0.7/xavn2001v2-0.4.0.7.tar.gz
+
 漏洞名称：
-Netgear XAVN2001v2 wl_enable_ssid_broadcast参数缺失导致空指针解引用漏洞（样本id:000040）
+Netgear XAVN2001v2 0.4.0.7 0x4391c0 空指针解引用漏洞
 
-Netgear XAVN2001v2是Netgear公司旗下的一款网络设备固件，受影响固件名称为XAVN2001v2，受影响版本为0.4.0.7。
+Netgear XAVN2001v2 0.4.0.7 是 Netgear 公司旗下的一款网络设备固件，受影响产品为 XAVN2001v2，受影响版本为 0.4.0.7。
 
-xavn2001v2-0.4.0.7
-Netgear XAVN2001v2的/usr/sbin/uhttpd二进制文件中存在一个空指针解引用漏洞。远程攻击者可以通过向/apply.cgi发送构造的POST请求，使程序在无线配置处理路径中读取缺失的`wl_enable_ssid_broadcast`字段，并将空指针直接作为参数传给nvram_set，最终导致uhttpd进程崩溃，造成拒绝服务。
+Netgear XAVN2001v2 0.4.0.7 的 `/usr/sbin/uhttpd` 二进制文件中存在一个 `空指针解引用` 漏洞。远程攻击者可以通过发送构造的 HTTP 请求触发该问题。submit_flag=wlan 将请求路由到无线配置处理路径后，代码对 cgi_value("wl_enable_ssid_broadcast", ...) 的返回值不判空，直接作为 nvram_set("wla_endis_ssid_broadcast", value) 的第二个实参使用，缺失该字段时触发空指针崩溃。
 
-该漏洞位于二进制文件/usr/sbin/uhttpd中。在处理/apply.cgi请求时，`submit_flag=wlan`会使程序进入无线配置相关处理函数。当前样本中，程序在0x439154附近的无线配置流程中，调用cgi_value读取`wl_enable_ssid_broadcast`字段。由于该字段在请求中缺失，cgi_value返回NULL。随后程序在0x4391b0将该返回值放入a1，并在0x4391c0直接调用nvram_set，将NULL作为`wla_endis_ssid_broadcast`对应的值写入NVRAM，最终触发空指针崩溃。
+该漏洞位于二进制文件 `/usr/sbin/uhttpd` 中。程序在 `/usr/sbin/uhttpd sym.cgi_value 0x40b4a4` 处对攻击者可控输入完成读取、解析或传递，并最终在 `/usr/sbin/uhttpd fcn.00439154 0x4391c0` 处进入危险操作，最终导致进程崩溃并造成拒绝服务。
 
-攻击者可以远程发起攻击，通过发送`submit_flag=wlan`且缺失`wl_enable_ssid_broadcast`字段的POST请求触发漏洞。
+攻击者可以远程发起攻击，通过向目标设备发送恶意请求触发漏洞。
 
 漏洞研究环境：
 
-通过模拟仿真进行验证。当前样本目录中保留了trace、日志以及相关分析材料，能够看到无线配置处理函数中从cgi_value到nvram_set的完整崩溃链路。
+通过模拟仿真进行验证。当前样本目录中提供了对应的请求包与发送脚本 send.py，可用于复现该问题。
 
-通过greenhouse进行仿真，greenhouse链接为https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+通过 greenhouse 进行仿真，greenhouse 链接为 https://github.com/sefcom/greenhouse。仿真环境搭建的具体命令链接为 https://github.com/sefcom/greenhouse/blob/master/MANUAL.md。
+我在附件里面附上了 rehost 的镜像，链接为 https://github.com/GinRawin/PoC/blob/main/0417PoC_hf/xavn2001v2-0.4.0.7/xavn2001v2-0.4.0.7.tar.gz，启动的命令为进入到 dockerfile 目录下，然后 `docker-compose build`, `docker-compose up`。
 
 目标配置情况：
 
@@ -22,15 +24,12 @@ Netgear XAVN2001v2的/usr/sbin/uhttpd二进制文件中存在一个空指针解�
 
 具体验证过程：
 
-第一步。攻击者向/apply.cgi发送POST请求，并通过`submit_flag=wlan`使程序进入无线配置处理路径。程序随后在相关配置函数中逐项读取无线参数。
-![alt text](image.png)
+第一步。uhttpd 处理本次 POST /apply.cgi?... 请求，body.submit_flag = "wlan" 命中无线设置分支，而不是 VulPacket.json 中的 handler_name 字面值。
 
-第二步。处理流程在0x4391a0调用cgi_value读取`wl_enable_ssid_broadcast`，但当前样本中该字段缺失，因此返回NULL。程序没有进行判空，而是继续把返回值准备为nvram_set的第二个参数。
-![alt text](image-1.png)
+第二步。0x439134 调用 fcn.00438e64，随后进入 0x439154 对无线相关 CGI 参数逐个取值并写 NVRAM。
 
-第三步。0x4391c0处的nvram_set调用接收到空指针参数后触发SIGSEGV。trace与容器日志都显示`si_addr=NULL`，说明这不是元数据误判，而是无线配置路径中的真实空指针解引用漏洞。
-![alt text](image-2.png)
+第三步。0x4391a0 调用 cgi_value("wl_enable_ssid_broadcast", ...) 得到 NULL，0x4391c0 将其传给 nvram_set，最终在该基本块内触发 SIGSEGV。
 
 相关问题代码：
 
-0x439154
+0x4391c0

