@@ -1,9 +1,0 @@
-POST /ntp_sync.cgi* HTTP/1.1
-Content-Type: application/json
-User-Agent: multipart/form-data;
-TIMEOUT: multipart/form-data;`$(xhy)`
-accept: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-Server: 256
-Content-Length: 303
-
-ntp_server=aa_W[Qaabe]b`_\aaa_^aacaadaaaaada\eaa_aaaab^da_aab^a\a^bbdaaba`ac]baaaaa\aae\aaaaadaabad\\aZZS{da^\aaaaaa_\a`a`e\caaWVU{^ba\dbaa&html_response_page=+z|q&er_ip_08_B=aaaW\Laaaa^acabaceda_ea_aaaaaaaaa_aaaac]\^aaaaaaaaba^aaaada\b\aeea`aacaac]``daa\c\a]aaaaa\^VZQwe\aac\eaabaaac`aeaaaaWWQra^aaaa`a

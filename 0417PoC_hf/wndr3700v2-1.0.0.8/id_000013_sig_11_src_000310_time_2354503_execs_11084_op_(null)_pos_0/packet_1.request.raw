@@ -1,0 +1,6 @@
+POST /apply.cgi?wan_intr_netmask HTTP/1.1
+Content-Type: application/json
+Host: /shares
+Content-Length: 23
+
+submit_flag=add_qos_mac

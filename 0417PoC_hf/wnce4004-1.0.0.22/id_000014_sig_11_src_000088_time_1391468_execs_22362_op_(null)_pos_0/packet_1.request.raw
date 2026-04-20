@@ -1,0 +1,6 @@
+POST /apply.cgi?/UPG_upgrade.htm HTTP/1.1
+Host: 100
+Content-Type: application/json
+Content-Length: 41
+
+submit_flag=ca_ap_sec_wpa&%20timestamp=11

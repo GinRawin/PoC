@@ -1,0 +1,6 @@
+POST /apply.cgi?/top.html timestamp= HTTP/1.1
+Content-Type: application/json
+Host: 191
+Content-Length: 32
+
+submit_flag=pptp&%20timestamp=aa

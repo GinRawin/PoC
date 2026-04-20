@@ -1,0 +1,9 @@
+POST /apply.cgi HTTP/1.1
+Accept: %20timestamp\r\n`xhy`
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
+Content-Type: application/json
+Host: 162
+Connection: -255
+Content-Length: 13
+
+submit_flag=1

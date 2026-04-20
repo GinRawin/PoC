@@ -1,6 +1,0 @@
-POST /apply.cgi?/wait_for_ca_connect.htm HTTP/1.1
-Host: 253
-Content-Type: application/json
-Content-Length: 177
-
-iptype=\wzq&submit_flag=block_sites&%20timestamp=aaaWZQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaWZQwaaaaaaaa

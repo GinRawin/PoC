@@ -1,5 +1,0 @@
-POST /set_sta_enrollee_pin.cgi* HTTP/1.1
-Content-Type: application/json
-Content-Length: 80
-
-wps_sta_enrollee_pin=wzqwzqwzq&er_ip_08_B=wzqwzqwzq&html_response_page=wzqwzqwzq

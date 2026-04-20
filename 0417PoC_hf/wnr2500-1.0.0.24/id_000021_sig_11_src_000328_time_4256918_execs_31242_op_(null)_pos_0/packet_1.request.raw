@@ -1,0 +1,9 @@
+POST /apply.cgi?UPG_upgrade.htm HTTP/1.1
+Accept: 126
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
+Connection: backup.cgi
+Host: 256
+Content-Type: application/json
+Content-Length: 47
+
+submit_flag=qos_uplink_bandwidth&%20timestamp=1

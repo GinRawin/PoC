@@ -1,9 +1,0 @@
-POST /apply.cgi?wan_l2tp_mac_assign_items HTTP/1.1
-Accept: vlan_group
-User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.143 Safari/537.36
-Connection: 183
-Host: /cgi-bin/
-Content-Type: application/json
-Content-Length: 66
-
-wan=&&wzq&_l2tp_dns_assign=|wzq&submit_flag=wlan&%20timestamp=\wzq

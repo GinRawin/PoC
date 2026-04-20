@@ -1,0 +1,5 @@
+POST /apply.cgi?SetWANRenew HTTP/1.1
+Host: 175
+Content-Length: 15
+
+submit_flag=bpa
